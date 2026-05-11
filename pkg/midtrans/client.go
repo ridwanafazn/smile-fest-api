@@ -1,6 +1,8 @@
 package midtrans
 
 import (
+	"crypto/sha512"
+	"encoding/hex"
 	"os"
 
 	"github.com/midtrans/midtrans-go"
@@ -25,4 +27,16 @@ func InitMidtrans() {
 
 	// Setup Snap Client
 	SnapClient.New(serverKey, env)
+}
+
+// VerifySignatureKey memverifikasi keaslian webhook dari Midtrans
+func VerifySignatureKey(orderID, statusCode, grossAmount, signatureKey string) bool {
+	serverKey := os.Getenv("MIDTRANS_SERVER_KEY")
+	payload := orderID + statusCode + grossAmount + serverKey
+
+	hasher := sha512.New()
+	hasher.Write([]byte(payload))
+	expectedSignature := hex.EncodeToString(hasher.Sum(nil))
+
+	return expectedSignature == signatureKey
 }

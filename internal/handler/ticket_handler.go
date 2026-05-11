@@ -58,8 +58,17 @@ func TrackTicket(c *gin.Context) {
 		return
 	}
 
+	// PERUBAHAN: Jika belum lunas (pending/expire), kembalikan statusnya (200 OK) tanpa UUID tiket
 	if transaction.Status != "settlement" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Tiket belum lunas atau transaksi gagal", "status": transaction.Status})
+		c.JSON(http.StatusOK, gin.H{
+			"message": "Status transaksi ditemukan",
+			// Properti ini harus sama persis dengan interface TrackResponse di FE
+			"data": gin.H{
+				"order_id":      transaction.ID,
+				"customer_name": transaction.CustomerName,
+				"status":        transaction.Status,
+			},
+		})
 		return
 	}
 
@@ -69,12 +78,14 @@ func TrackTicket(c *gin.Context) {
 		return
 	}
 
+	// PERUBAHAN: Transaksi lunas, kirimkan data lengkap beserta UUID Tiket (disesuaikan propertinya)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Tiket berhasil ditemukan",
 		"data": gin.H{
+			"order_id":      transaction.ID,
 			"customer_name": transaction.CustomerName,
-			"ticket_id":     ticket.ID, // UUID ini yang akan diubah jadi QR Code di Frontend
-			"is_scanned":    ticket.IsScanned,
+			"ticket_uuid":   ticket.ID, // Diubah namanya jadi ticket_uuid agar sesuai dengan FE
+			"status":        transaction.Status,
 		},
 	})
 }

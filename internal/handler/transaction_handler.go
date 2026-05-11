@@ -165,13 +165,31 @@ func MidtransWebhook(c *gin.Context) {
 		return
 	}
 
+	// --- PENAMBAHAN KEAMANAN: Ekstrak field untuk validasi ---
+	statusCode, _ := notificationPayload["status_code"].(string)
+	grossAmount, _ := notificationPayload["gross_amount"].(string)
+	signatureKey, _ := notificationPayload["signature_key"].(string)
 	transactionStatus, _ := notificationPayload["transaction_status"].(string)
+
+	// Verifikasi Signature (Gembok Anti-Hacker)
+	if !midtransPkg.VerifySignatureKey(orderID, statusCode, grossAmount, signatureKey) {
+		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid signature key"})
+		return
+	}
+	// ---------------------------------------------------------
 
 	var transaction model.Transaction
 	if err := config.DB.Where("id = ?", orderID).First(&transaction).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Transaksi tidak ditemukan"})
 		return
 	}
+
+	// --- PENCEGAHAN PROSES GANDA ---
+	if transaction.Status == "settlement" {
+		c.JSON(http.StatusOK, gin.H{"status": "ok, already processed"})
+		return
+	}
+	// -------------------------------
 
 	// Update status transaksi berdasarkan notifikasi Midtrans
 	if transactionStatus == "settlement" || transactionStatus == "capture" {

@@ -1,6 +1,9 @@
 package router
 
 import (
+	"time"
+
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/ridwanafazn/smile-fest-api/internal/handler"
 	"github.com/ridwanafazn/smile-fest-api/internal/middleware"
@@ -12,6 +15,17 @@ import (
 
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
+
+	// --- KONFIGURASI CORS ---
+	// Wajib dipasang di paling atas sebelum rute-rute lain didefinisikan
+	r.Use(cors.New(cors.Config{
+		AllowOrigins:     []string{"http://localhost:5173", "https://smile-fest.com"}, // Tambahkan domain aslimu nanti di sini
+		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
+		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept"},
+		ExposeHeaders:    []string{"Content-Length"},
+		AllowCredentials: true,
+		MaxAge:           12 * time.Hour,
+	}))
 
 	// --- ROUTE SWAGGER ---
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))

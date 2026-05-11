@@ -52,6 +52,8 @@ func Login(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"token": token, "role": user.Role})
 }
 
+// --- KHUSUS ADMIN ---
+
 // CreateUser godoc
 // @Summary      Create New User
 // @Description  Hanya bisa diakses Admin untuk membuat akun Scanner/Admin baru
@@ -85,6 +87,48 @@ func CreateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User berhasil dibuat"})
 }
 
+// GetUsers godoc
+// @Summary      Get All Users
+// @Description  Admin melihat daftar seluruh panitia dan admin yang terdaftar
+// @Tags         admin
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/users [get]
+func GetUsers(c *gin.Context) {
+	var users []model.User
+	// Sengaja kita Select field tertentu agar password hash tidak ikut terkirim ke frontend
+	config.DB.Select("id", "username", "role", "created_at").Find(&users)
+	c.JSON(http.StatusOK, gin.H{"data": users})
+}
+
+// DeleteUser godoc
+// @Summary      Delete User
+// @Description  Admin menghapus/mencabut akses akun panitia
+// @Tags         admin
+// @Produce      json
+// @Param        id   path      string  true  "User ID"
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/users/{id} [delete]
+func DeleteUser(c *gin.Context) {
+	id := c.Param("id")
+
+	// Ambil ID admin yang sedang melakukan request dari token JWT
+	currentUserID, exists := c.Get("user_id")
+	if exists && id == currentUserID {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Sabuk pengaman: Anda tidak dapat menghapus akun Anda sendiri!"})
+		return
+	}
+
+	if err := config.DB.Delete(&model.User{}, "id = ?", id).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus user"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Akses user berhasil dicabut dan dihapus"})
+}
+
 // SeedAdmin godoc
 // @Summary      Seed First Admin
 // @Description  Temporer untuk membuat akun admin pertama (Matikan rute ini setelah dipakai)
@@ -93,9 +137,9 @@ func CreateUser(c *gin.Context) {
 // @Success      200    {object}  map[string]interface{}
 // @Router       /api/seed-admin [post]
 func SeedAdmin(c *gin.Context) {
-	hashedPassword, _ := utils.HashPassword("SMILEFEST2026")
+	hashedPassword, _ := utils.HashPassword("ringkaibinar")
 	admin := model.User{
-		Username: "admin_wang",
+		Username: "admin",
 		Password: hashedPassword,
 		Role:     "admin",
 	}
@@ -105,5 +149,5 @@ func SeedAdmin(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Admin berhasil dibuat! Silakan login dengan user: admin_wang"})
+	c.JSON(http.StatusOK, gin.H{"message": "Admin berhasil dibuat! Silakan login dengan user: admin"})
 }

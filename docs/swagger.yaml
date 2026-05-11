@@ -71,7 +71,82 @@ info:
   title: SMILE FEST API
   version: "1.0"
 paths:
+  /api/admin/dashboard:
+    get:
+      description: Mengambil agregasi data pendapatan dan penjualan tiket (Real-time)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get Dashboard Statistics
+      tags:
+      - admin
+  /api/admin/ticket-variants/{id}:
+    put:
+      description: Admin membuka atau menutup penjualan fase tiket (Presale 1, dll)
+      parameters:
+      - description: 'Variant ID (contoh: TICKET-PRESALE-1)'
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Toggle Ticket Variant Status
+      tags:
+      - admin
+  /api/admin/transactions:
+    get:
+      description: Melihat daftar riwayat transaksi peserta. Bisa mencari berdasarkan
+        nama atau email.
+      parameters:
+      - description: Cari nama / email
+        in: query
+        name: search
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get All Transactions
+      tags:
+      - admin
   /api/admin/users:
+    get:
+      description: Admin melihat daftar seluruh panitia dan admin yang terdaftar
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get All Users
+      tags:
+      - admin
     post:
       consumes:
       - application/json
@@ -94,6 +169,28 @@ paths:
       security:
       - BearerAuth: []
       summary: Create New User
+      tags:
+      - admin
+  /api/admin/users/{id}:
+    delete:
+      description: Admin menghapus/mencabut akses akun panitia
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete User
       tags:
       - admin
   /api/admin/vouchers:
@@ -134,6 +231,28 @@ paths:
       security:
       - BearerAuth: []
       summary: Create New Voucher
+      tags:
+      - admin
+  /api/admin/vouchers/{id}:
+    put:
+      description: Admin mematikan (Kill Switch) atau menyalakan kembali voucher
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Toggle Voucher Status
       tags:
       - admin
   /api/checkout:
@@ -182,6 +301,22 @@ paths:
       summary: User Login
       tags:
       - auth
+  /api/scanner/stats:
+    get:
+      description: Panitia lapangan melihat jumlah peserta yang sudah masuk
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get Scanner Stats
+      tags:
+      - scanner
   /api/scanner/validate-ticket:
     post:
       consumes:
@@ -236,6 +371,31 @@ paths:
             additionalProperties: true
             type: object
       summary: Get Ticket Info
+      tags:
+      - public
+  /api/tickets/track:
+    get:
+      description: Peserta mencari UUID tiket mereka jika lupa/tidak dapat email
+      parameters:
+      - description: Order ID (SMILE-xxx)
+        in: query
+        name: order_id
+        required: true
+        type: string
+      - description: Email Peserta
+        in: query
+        name: email
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Track E-Ticket
       tags:
       - public
   /api/vouchers/validate:

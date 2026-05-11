@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
 	"time"
 
@@ -8,6 +9,8 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 )
+
+// --- KHUSUS PUBLIK ---
 
 // GetTicketInfo godoc
 // @Summary      Get Ticket Info
@@ -30,6 +33,87 @@ func GetTicketInfo(c *gin.Context) {
 		"data":    ticketVariants,
 	})
 }
+
+// TrackTicket godoc
+// @Summary      Track E-Ticket
+// @Description  Peserta mencari UUID tiket mereka jika lupa/tidak dapat email
+// @Tags         public
+// @Produce      json
+// @Param        order_id  query     string  true  "Order ID (SMILE-xxx)"
+// @Param        email     query     string  true  "Email Peserta"
+// @Success      200       {object}  map[string]interface{}
+// @Router       /api/tickets/track [get]
+func TrackTicket(c *gin.Context) {
+	orderID := c.Query("order_id")
+	email := c.Query("email")
+
+	if orderID == "" || email == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID dan Email wajib diisi"})
+		return
+	}
+
+	var transaction model.Transaction
+	if err := config.DB.Where("id = ? AND customer_email = ?", orderID, email).First(&transaction).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Data tidak ditemukan. Pastikan Order ID dan Email benar."})
+		return
+	}
+
+	if transaction.Status != "settlement" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Tiket belum lunas atau transaksi gagal", "status": transaction.Status})
+		return
+	}
+
+	var ticket model.Ticket
+	if err := config.DB.Where("transaction_id = ?", transaction.ID).First(&ticket).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tiket belum diterbitkan. Hubungi panitia."})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Tiket berhasil ditemukan",
+		"data": gin.H{
+			"customer_name": transaction.CustomerName,
+			"ticket_id":     ticket.ID, // UUID ini yang akan diubah jadi QR Code di Frontend
+			"is_scanned":    ticket.IsScanned,
+		},
+	})
+}
+
+// --- KHUSUS ADMIN ---
+
+// ToggleTicketVariant godoc
+// @Summary      Toggle Ticket Variant Status
+// @Description  Admin membuka atau menutup penjualan fase tiket (Presale 1, dll)
+// @Tags         admin
+// @Produce      json
+// @Param        id   path      string  true  "Variant ID (contoh: TICKET-PRESALE-1)"
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/ticket-variants/{id} [put]
+func ToggleTicketVariant(c *gin.Context) {
+	id := c.Param("id")
+	var variant model.TicketVariant
+
+	if err := config.DB.Where("id = ?", id).First(&variant).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tipe tiket tidak ditemukan"})
+		return
+	}
+
+	variant.IsActive = !variant.IsActive
+	config.DB.Save(&variant)
+
+	status := "ditutup"
+	if variant.IsActive {
+		status = "dibuka"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   fmt.Sprintf("Penjualan %s berhasil %s", variant.Name, status),
+		"is_active": variant.IsActive,
+	})
+}
+
+// --- KHUSUS SCANNER ---
 
 // ValidateTicket godoc
 // @Summary      Validate Ticket
@@ -82,5 +166,30 @@ func ValidateTicket(c *gin.Context) {
 		"message":       "Validasi berhasil! Akses diizinkan.",
 		"customer_name": ticket.Transaction.CustomerName,
 		"ticket_id":     ticket.ID,
+	})
+}
+
+// GetScannerStats godoc
+// @Summary      Get Scanner Stats
+// @Description  Panitia lapangan melihat jumlah peserta yang sudah masuk
+// @Tags         scanner
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/scanner/stats [get]
+func GetScannerStats(c *gin.Context) {
+	var totalTickets int64
+	var scannedTickets int64
+
+	config.DB.Model(&model.Ticket{}).Count(&totalTickets)
+	config.DB.Model(&model.Ticket{}).Where("is_scanned = ?", true).Count(&scannedTickets)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Statistik antrean",
+		"data": gin.H{
+			"total_tickets":   totalTickets,
+			"scanned_tickets": scannedTickets,
+			"remaining":       totalTickets - scannedTickets,
+		},
 	})
 }

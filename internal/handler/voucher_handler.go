@@ -62,6 +62,39 @@ func GetVouchers(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"data": vouchers})
 }
 
+// ToggleVoucherStatus godoc
+// @Summary      Toggle Voucher Status
+// @Description  Admin mematikan (Kill Switch) atau menyalakan kembali voucher
+// @Tags         admin
+// @Produce      json
+// @Param        id   path      int  true  "Voucher ID"
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/vouchers/{id} [put]
+func ToggleVoucherStatus(c *gin.Context) {
+	id := c.Param("id")
+	var voucher model.Voucher
+
+	if err := config.DB.First(&voucher, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Voucher tidak ditemukan"})
+		return
+	}
+
+	// Balikkan statusnya (aktif jadi tidak aktif, dan sebaliknya)
+	voucher.IsActive = !voucher.IsActive
+	config.DB.Save(&voucher)
+
+	status := "dinonaktifkan"
+	if voucher.IsActive {
+		status = "diaktifkan"
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":   "Voucher berhasil " + status,
+		"is_active": voucher.IsActive,
+	})
+}
+
 // ValidateVoucher godoc
 // @Summary      Validate Voucher Code
 // @Description  Peserta mengecek apakah voucher valid dan kuota masih ada sebelum checkout
@@ -84,7 +117,7 @@ func ValidateVoucher(c *gin.Context) {
 	}
 
 	if !voucher.IsActive {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher sudah tidak aktif"})
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher sedang tidak aktif"})
 		return
 	}
 

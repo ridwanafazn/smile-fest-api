@@ -202,3 +202,71 @@ func MidtransWebhook(c *gin.Context) {
 	// Selalu kembalikan 200 OK agar Midtrans berhenti mengirim notifikasi ulang
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
+
+// --- KHUSUS ADMIN ---
+
+// GetDashboardStats godoc
+// @Summary      Get Dashboard Statistics
+// @Description  Mengambil agregasi data pendapatan dan penjualan tiket (Real-time)
+// @Tags         admin
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/dashboard [get]
+func GetDashboardStats(c *gin.Context) {
+	var totalRevenue float64
+	var totalTickets int64
+	var scannedTickets int64
+
+	// Hitung total pendapatan (hanya dari transaksi lunas)
+	config.DB.Model(&model.Transaction{}).Where("status = ?", "settlement").Select("COALESCE(SUM(total_amount), 0)").Scan(&totalRevenue)
+
+	// Hitung total tiket terjual
+	config.DB.Model(&model.Ticket{}).Count(&totalTickets)
+
+	// Hitung total tiket yang sudah di-scan di lapangan
+	config.DB.Model(&model.Ticket{}).Where("is_scanned = ?", true).Count(&scannedTickets)
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Berhasil mengambil statistik dashboard",
+		"data": gin.H{
+			"total_revenue":   totalRevenue,
+			"total_tickets":   totalTickets,
+			"scanned_tickets": scannedTickets,
+		},
+	})
+}
+
+// GetTransactions godoc
+// @Summary      Get All Transactions
+// @Description  Melihat daftar riwayat transaksi peserta. Bisa mencari berdasarkan nama atau email.
+// @Tags         admin
+// @Produce      json
+// @Param        search  query     string  false  "Cari nama / email"
+// @Success      200     {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/transactions [get]
+func GetTransactions(c *gin.Context) {
+	search := c.Query("search")
+	var transactions []model.Transaction
+
+	// Buat query dasar, preload data Voucher jika ada biar admin tau dia pakai diskon apa
+	query := config.DB.Preload("Voucher")
+
+	if search != "" {
+		// Pencarian ILIKE untuk PostgreSQL (tidak case-sensitive)
+		searchParam := "%" + search + "%"
+		query = query.Where("customer_name ILIKE ? OR customer_email ILIKE ?", searchParam, searchParam)
+	}
+
+	// Ambil data, urutkan dari yang paling baru beli
+	if err := query.Order("created_at desc").Find(&transactions).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data transaksi"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Berhasil mengambil data transaksi",
+		"data":    transactions,
+	})
+}

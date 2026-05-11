@@ -20,7 +20,6 @@ func ConnectDatabase() {
 		log.Fatal("Gagal koneksi ke database:", err)
 	}
 
-	fmt.Println("Mengeksekusi Drop Table Users...")
 	// database.Migrator().DropTable(&model.User{})
 	// --------------------------
 

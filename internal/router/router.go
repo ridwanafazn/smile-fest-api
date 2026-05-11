@@ -25,35 +25,45 @@ func SetupRouter() *gin.Engine {
 	r.POST("/api/login", handler.Login)
 	// r.POST("/api/seed-admin", handler.SeedAdmin)
 
-	// Info Tiket & Voucher
+	// Info & Lacak Tiket
 	r.GET("/api/tickets/info", handler.GetTicketInfo)
+	r.GET("/api/tickets/track", handler.TrackTicket)
+
+	// Info Voucher
 	r.GET("/api/vouchers/validate", handler.ValidateVoucher)
 
-	// Checkout & Pembayaran
+	// Checkout & Webhook (Payment)
 	r.POST("/api/checkout", handler.Checkout)
-
-	// Webhook Midtrans (Didaftarkan di Dashboard Midtrans nantinya)
 	r.POST("/api/webhook/midtrans", handler.MidtransWebhook)
 
 	// --- ROUTE ADMIN (Hanya token dengan role 'admin') ---
 	admin := r.Group("/api/admin")
 	admin.Use(middleware.AuthMiddleware("admin"))
 	{
+		// Observabilitas
+		admin.GET("/dashboard", handler.GetDashboardStats)
+		admin.GET("/transactions", handler.GetTransactions)
+
 		// Manajemen User/Scanner
 		admin.POST("/users", handler.CreateUser)
-		// admin.GET("/dashboard", handler.GetDashboardStats)
+		admin.GET("/users", handler.GetUsers)
+		admin.DELETE("/users/:id", handler.DeleteUser)
 
 		// Manajemen Voucher
 		admin.POST("/vouchers", handler.CreateVoucher)
 		admin.GET("/vouchers", handler.GetVouchers)
+		admin.PUT("/vouchers/:id", handler.ToggleVoucherStatus)
+
+		// Kontrol Presale
+		admin.PUT("/ticket-variants/:id", handler.ToggleTicketVariant)
 	}
 
 	// --- ROUTE SCANNER (Bisa diakses Scanner & Admin) ---
 	scanner := r.Group("/api/scanner")
 	scanner.Use(middleware.AuthMiddleware("scanner"))
 	{
-		// Rute ini sekarang sudah aktif!
 		scanner.POST("/validate-ticket", handler.ValidateTicket)
+		scanner.GET("/stats", handler.GetScannerStats)
 	}
 
 	return r

@@ -9,11 +9,28 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
 )
 
+type LoginInput struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+}
+
+type CreateUserInput struct {
+	Username string `json:"username" binding:"required"`
+	Password string `json:"password" binding:"required"`
+	Role     string `json:"role" binding:"required"` // admin / scanner
+}
+
+// Login godoc
+// @Summary      User Login
+// @Description  Mendapatkan JWT token untuk akses API
+// @Tags         auth
+// @Accept       json
+// @Produce      json
+// @Param        input  body      LoginInput  true  "Kredensial Login"
+// @Success      200    {object}  map[string]interface{}
+// @Router       /api/login [post]
 func Login(c *gin.Context) {
-	var input struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
-	}
+	var input LoginInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -31,18 +48,22 @@ func Login(c *gin.Context) {
 		return
 	}
 
-	// Ubah di baris ini: user.ID dikonversi jadi string
 	token, _ := utils.GenerateToken(user.ID.String(), user.Role)
 	c.JSON(http.StatusOK, gin.H{"token": token, "role": user.Role})
 }
 
-// CreateUser hanya bisa diakses Admin untuk bikin Scanner
+// CreateUser godoc
+// @Summary      Create New User
+// @Description  Hanya bisa diakses Admin untuk membuat akun Scanner/Admin baru
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        input  body      CreateUserInput  true  "Data User Baru"
+// @Success      200    {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/users [post]
 func CreateUser(c *gin.Context) {
-	var input struct {
-		Username string `json:"username" binding:"required"`
-		Password string `json:"password" binding:"required"`
-		Role     string `json:"role" binding:"required"` // admin / scanner
-	}
+	var input CreateUserInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -64,7 +85,13 @@ func CreateUser(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "User berhasil dibuat"})
 }
 
-// SeedAdmin temporer untuk buat akun pertama
+// SeedAdmin godoc
+// @Summary      Seed First Admin
+// @Description  Temporer untuk membuat akun admin pertama (Matikan rute ini setelah dipakai)
+// @Tags         auth
+// @Produce      json
+// @Success      200    {object}  map[string]interface{}
+// @Router       /api/seed-admin [post]
 func SeedAdmin(c *gin.Context) {
 	hashedPassword, _ := utils.HashPassword("SMILEFEST2026")
 	admin := model.User{

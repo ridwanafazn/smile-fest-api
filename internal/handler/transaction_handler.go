@@ -15,15 +15,25 @@ import (
 	"gorm.io/gorm"
 )
 
-// Checkout dipanggil saat peserta klik "Bayar" di Frontend
+type CheckoutInput struct {
+	TicketType    string `json:"ticket_type" binding:"required"` // TICKET-PRESALE-1, dll
+	CustomerName  string `json:"customer_name" binding:"required"`
+	CustomerEmail string `json:"customer_email" binding:"required,email"`
+	CustomerPhone string `json:"customer_phone" binding:"required"`
+	VoucherCode   string `json:"voucher_code"` // Opsional
+}
+
+// Checkout godoc
+// @Summary      Create Transaction Checkout
+// @Description  Membuat transaksi dan mendapatkan Snap Token dari Midtrans
+// @Tags         public
+// @Accept       json
+// @Produce      json
+// @Param        input  body      CheckoutInput  true  "Data Pembeli dan Tiket"
+// @Success      200    {object}  map[string]interface{}
+// @Router       /api/checkout [post]
 func Checkout(c *gin.Context) {
-	var input struct {
-		TicketType    string `json:"ticket_type" binding:"required"` // TICKET-PRESALE-1, dll
-		CustomerName  string `json:"customer_name" binding:"required"`
-		CustomerEmail string `json:"customer_email" binding:"required,email"`
-		CustomerPhone string `json:"customer_phone" binding:"required"`
-		VoucherCode   string `json:"voucher_code"` // Opsional
-	}
+	var input CheckoutInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -133,7 +143,14 @@ func Checkout(c *gin.Context) {
 	})
 }
 
-// MidtransWebhook menangani notifikasi dari Midtrans (dipanggil otomatis oleh server Midtrans)
+// MidtransWebhook godoc
+// @Summary      Midtrans Payment Webhook
+// @Description  Menerima notifikasi status pembayaran dari server Midtrans
+// @Tags         webhook
+// @Accept       json
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Router       /api/webhook/midtrans [post]
 func MidtransWebhook(c *gin.Context) {
 	var notificationPayload map[string]interface{}
 

@@ -1,0 +1,283 @@
+basePath: /
+definitions:
+  internal_handler.CheckoutInput:
+    properties:
+      customer_email:
+        type: string
+      customer_name:
+        type: string
+      customer_phone:
+        type: string
+      ticket_type:
+        description: TICKET-PRESALE-1, dll
+        type: string
+      voucher_code:
+        description: Opsional
+        type: string
+    required:
+    - customer_email
+    - customer_name
+    - customer_phone
+    - ticket_type
+    type: object
+  internal_handler.CreateUserInput:
+    properties:
+      password:
+        type: string
+      role:
+        description: admin / scanner
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - role
+    - username
+    type: object
+  internal_handler.CreateVoucherInput:
+    properties:
+      code:
+        type: string
+      discount_amount:
+        type: number
+      quota:
+        type: integer
+    required:
+    - code
+    - discount_amount
+    - quota
+    type: object
+  internal_handler.LoginInput:
+    properties:
+      password:
+        type: string
+      username:
+        type: string
+    required:
+    - password
+    - username
+    type: object
+host: localhost:8080
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: API Documentation for SMILE FEST 2026 Ticketing System.
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: SMILE FEST API
+  version: "1.0"
+paths:
+  /api/admin/users:
+    post:
+      consumes:
+      - application/json
+      description: Hanya bisa diakses Admin untuk membuat akun Scanner/Admin baru
+      parameters:
+      - description: Data User Baru
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.CreateUserInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create New User
+      tags:
+      - admin
+  /api/admin/vouchers:
+    get:
+      description: Admin melihat daftar voucher dan sisa kuota
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Get All Vouchers
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: 'Admin menambah kode diskon baru (misal: PELAJAR20K)'
+      parameters:
+      - description: Data Voucher
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.CreateVoucherInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Create New Voucher
+      tags:
+      - admin
+  /api/checkout:
+    post:
+      consumes:
+      - application/json
+      description: Membuat transaksi dan mendapatkan Snap Token dari Midtrans
+      parameters:
+      - description: Data Pembeli dan Tiket
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.CheckoutInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Create Transaction Checkout
+      tags:
+      - public
+  /api/login:
+    post:
+      consumes:
+      - application/json
+      description: Mendapatkan JWT token untuk akses API
+      parameters:
+      - description: Kredensial Login
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.LoginInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: User Login
+      tags:
+      - auth
+  /api/scanner/validate-ticket:
+    post:
+      consumes:
+      - application/json
+      description: Memvalidasi QR Code dari tiket peserta di hari H
+      parameters:
+      - description: Ticket UUID
+        in: body
+        name: input
+        required: true
+        schema:
+          additionalProperties:
+            type: string
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Validate Ticket
+      tags:
+      - scanner
+  /api/seed-admin:
+    post:
+      description: Temporer untuk membuat akun admin pertama (Matikan rute ini setelah
+        dipakai)
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Seed First Admin
+      tags:
+      - auth
+  /api/tickets/info:
+    get:
+      description: Mengambil data harga dan tipe tiket yang aktif dari database
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Get Ticket Info
+      tags:
+      - public
+  /api/vouchers/validate:
+    get:
+      description: Peserta mengecek apakah voucher valid dan kuota masih ada sebelum
+        checkout
+      parameters:
+      - description: Kode Voucher
+        in: query
+        name: code
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Validate Voucher Code
+      tags:
+      - public
+  /api/webhook/midtrans:
+    post:
+      consumes:
+      - application/json
+      description: Menerima notifikasi status pembayaran dari server Midtrans
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Midtrans Payment Webhook
+      tags:
+      - webhook
+securityDefinitions:
+  BearerAuth:
+    in: header
+    name: Authorization
+    type: apiKey
+swagger: "2.0"

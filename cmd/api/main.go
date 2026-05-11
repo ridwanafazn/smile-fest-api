@@ -10,6 +10,24 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/pkg/midtrans" // Import package midtrans kita
 )
 
+// @title           SMILE FEST API
+// @version         1.0
+// @description     API Documentation for SMILE FEST 2026 Ticketing System.
+// @termsOfService  http://swagger.io/terms/
+
+// @contact.name   API Support
+// @contact.url    http://www.swagger.io/support
+// @contact.email  support@swagger.io
+
+// @license.name  Apache 2.0
+// @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
+
+// @host      localhost:8080
+// @BasePath  /
+
+// @securityDefinitions.apikey BearerAuth
+// @in header
+// @name Authorization
 func main() {
 	// 1. Load variabel environment dari file .env
 	if err := godotenv.Load(); err != nil {

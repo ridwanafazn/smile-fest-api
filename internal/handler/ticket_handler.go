@@ -9,7 +9,13 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 )
 
-// GetTicketInfo sekarang mengambil data dinamis langsung dari Database
+// GetTicketInfo godoc
+// @Summary      Get Ticket Info
+// @Description  Mengambil data harga dan tipe tiket yang aktif dari database
+// @Tags         public
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Router       /api/tickets/info [get]
 func GetTicketInfo(c *gin.Context) {
 	var ticketVariants []model.TicketVariant
 
@@ -25,7 +31,16 @@ func GetTicketInfo(c *gin.Context) {
 	})
 }
 
-// ValidateTicket diakses oleh aplikasi Scanner di hari H
+// ValidateTicket godoc
+// @Summary      Validate Ticket
+// @Description  Memvalidasi QR Code dari tiket peserta di hari H
+// @Tags         scanner
+// @Accept       json
+// @Produce      json
+// @Param        input  body      map[string]string  true  "Ticket UUID"
+// @Success      200    {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/scanner/validate-ticket [post]
 func ValidateTicket(c *gin.Context) {
 	var input struct {
 		TicketID string `json:"ticket_id" binding:"required"` // Berisi UUID dari QR Code

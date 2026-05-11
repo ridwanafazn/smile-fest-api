@@ -9,15 +9,24 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 )
 
-// --- KHUSUS ADMIN ---
+type CreateVoucherInput struct {
+	Code           string  `json:"code" binding:"required"`
+	DiscountAmount float64 `json:"discount_amount" binding:"required"`
+	Quota          int     `json:"quota" binding:"required"`
+}
 
-// CreateVoucher untuk Admin menambah kode diskon (misal: PELAJAR20K)
+// CreateVoucher godoc
+// @Summary      Create New Voucher
+// @Description  Admin menambah kode diskon baru (misal: PELAJAR20K)
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        input  body      CreateVoucherInput  true  "Data Voucher"
+// @Success      200    {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/vouchers [post]
 func CreateVoucher(c *gin.Context) {
-	var input struct {
-		Code           string  `json:"code" binding:"required"`
-		DiscountAmount float64 `json:"discount_amount" binding:"required"`
-		Quota          int     `json:"quota" binding:"required"`
-	}
+	var input CreateVoucherInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -39,16 +48,28 @@ func CreateVoucher(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"message": "Voucher berhasil dibuat", "data": voucher})
 }
 
-// GetVouchers untuk Admin melihat sisa kuota
+// GetVouchers godoc
+// @Summary      Get All Vouchers
+// @Description  Admin melihat daftar voucher dan sisa kuota
+// @Tags         admin
+// @Produce      json
+// @Success      200    {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/vouchers [get]
 func GetVouchers(c *gin.Context) {
 	var vouchers []model.Voucher
 	config.DB.Find(&vouchers)
 	c.JSON(http.StatusOK, gin.H{"data": vouchers})
 }
 
-// --- KHUSUS PUBLIK / PESERTA ---
-
-// ValidateVoucher untuk Peserta mengecek apakah voucher valid dan kuota masih ada
+// ValidateVoucher godoc
+// @Summary      Validate Voucher Code
+// @Description  Peserta mengecek apakah voucher valid dan kuota masih ada sebelum checkout
+// @Tags         public
+// @Produce      json
+// @Param        code   query     string  true  "Kode Voucher"
+// @Success      200    {object}  map[string]interface{}
+// @Router       /api/vouchers/validate [get]
 func ValidateVoucher(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {

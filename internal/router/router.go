@@ -4,10 +4,17 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/ridwanafazn/smile-fest-api/internal/handler"
 	"github.com/ridwanafazn/smile-fest-api/internal/middleware"
+
+	_ "github.com/ridwanafazn/smile-fest-api/docs" // Wajib ada untuk membaca hasil generate swag init
+	swaggerFiles "github.com/swaggo/files"
+	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
 func SetupRouter() *gin.Engine {
 	r := gin.Default()
+
+	// --- ROUTE SWAGGER ---
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// --- ROUTE PUBLIK (Bisa diakses siapa saja) ---
 	r.GET("/ping", func(c *gin.Context) {

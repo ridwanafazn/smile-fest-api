@@ -18,7 +18,7 @@ func SetupRouter() *gin.Engine {
 
 	// --- KONFIGURASI CORS ---
 	r.Use(cors.New(cors.Config{
-		AllowOrigins:     []string{"http://localhost:5173", "https://smile-fest.com"}, // Tambahkan domain aslimu nanti di sini
+		AllowOrigins:     []string{"http://localhost:5173", "https://smile-fest.com", "https://smile-festival.ridwanafzn.workers.dev"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept"},
 		ExposeHeaders:    []string{"Content-Length"},

@@ -15,6 +15,11 @@ type CreateVoucherInput struct {
 	Quota          int     `json:"quota" binding:"required"`
 }
 
+type UpdateVoucherInput struct {
+	DiscountAmount float64 `json:"discount_amount" binding:"required"`
+	Quota          int     `json:"quota" binding:"required"`
+}
+
 // CreateVoucher godoc
 // @Summary      Create New Voucher
 // @Description  Admin menambah kode diskon baru (misal: PELAJAR20K)
@@ -58,8 +63,13 @@ func CreateVoucher(c *gin.Context) {
 // @Router       /api/admin/vouchers [get]
 func GetVouchers(c *gin.Context) {
 	var vouchers []model.Voucher
-	config.DB.Find(&vouchers)
-	c.JSON(http.StatusOK, gin.H{"data": vouchers})
+	config.DB.Order("created_at desc").Find(&vouchers)
+
+	// Pembungkusan JSON agar seragam (Unboxing ready)
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Berhasil mengambil data voucher",
+		"data":    vouchers,
+	})
 }
 
 // ToggleVoucherStatus godoc
@@ -70,7 +80,7 @@ func GetVouchers(c *gin.Context) {
 // @Param        id   path      int  true  "Voucher ID"
 // @Success      200  {object}  map[string]interface{}
 // @Security     BearerAuth
-// @Router       /api/admin/vouchers/{id} [put]
+// @Router       /api/admin/vouchers/{id}/toggle [put]
 func ToggleVoucherStatus(c *gin.Context) {
 	id := c.Param("id")
 	var voucher model.Voucher
@@ -80,7 +90,6 @@ func ToggleVoucherStatus(c *gin.Context) {
 		return
 	}
 
-	// Balikkan statusnya (aktif jadi tidak aktif, dan sebaliknya)
 	voucher.IsActive = !voucher.IsActive
 	config.DB.Save(&voucher)
 
@@ -93,6 +102,69 @@ func ToggleVoucherStatus(c *gin.Context) {
 		"message":   "Voucher berhasil " + status,
 		"is_active": voucher.IsActive,
 	})
+}
+
+// UpdateVoucher godoc
+// @Summary      Update Voucher
+// @Description  Admin merubah potongan harga atau kuota voucher
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        id     path      int                 true  "Voucher ID"
+// @Param        input  body      UpdateVoucherInput  true  "Data Update Voucher"
+// @Success      200    {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/vouchers/{id} [put]
+func UpdateVoucher(c *gin.Context) {
+	id := c.Param("id")
+	var input UpdateVoucherInput
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var voucher model.Voucher
+	if err := config.DB.First(&voucher, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Voucher tidak ditemukan"})
+		return
+	}
+
+	voucher.DiscountAmount = input.DiscountAmount
+	voucher.Quota = input.Quota
+
+	if err := config.DB.Save(&voucher).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengupdate voucher"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Voucher berhasil diperbarui", "data": voucher})
+}
+
+// DeleteVoucher godoc
+// @Summary      Delete Voucher
+// @Description  Admin menghapus voucher secara permanen
+// @Tags         admin
+// @Produce      json
+// @Param        id   path      int  true  "Voucher ID"
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/vouchers/{id} [delete]
+func DeleteVoucher(c *gin.Context) {
+	id := c.Param("id")
+	var voucher model.Voucher
+
+	if err := config.DB.First(&voucher, id).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Voucher tidak ditemukan"})
+		return
+	}
+
+	if err := config.DB.Delete(&voucher).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus voucher"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{"message": "Voucher berhasil dihapus"})
 }
 
 // ValidateVoucher godoc

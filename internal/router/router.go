@@ -17,7 +17,6 @@ func SetupRouter() *gin.Engine {
 	r := gin.Default()
 
 	// --- KONFIGURASI CORS ---
-	// Wajib dipasang di paling atas sebelum rute-rute lain didefinisikan
 	r.Use(cors.New(cors.Config{
 		AllowOrigins:     []string{"http://localhost:5173", "https://smile-fest.com"}, // Tambahkan domain aslimu nanti di sini
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
@@ -37,7 +36,6 @@ func SetupRouter() *gin.Engine {
 
 	// Auth
 	r.POST("/api/login", handler.Login)
-	// r.POST("/api/seed-admin", handler.SeedAdmin)
 
 	// Info & Lacak Tiket
 	r.GET("/api/tickets/info", handler.GetTicketInfo)
@@ -63,10 +61,12 @@ func SetupRouter() *gin.Engine {
 		admin.GET("/users", handler.GetUsers)
 		admin.DELETE("/users/:id", handler.DeleteUser)
 
-		// Manajemen Voucher
+		// Manajemen Voucher (CRUD Lengkap)
 		admin.POST("/vouchers", handler.CreateVoucher)
 		admin.GET("/vouchers", handler.GetVouchers)
-		admin.PUT("/vouchers/:id", handler.ToggleVoucherStatus)
+		admin.PUT("/vouchers/:id", handler.UpdateVoucher)              // [BARU] Edit Voucher
+		admin.DELETE("/vouchers/:id", handler.DeleteVoucher)           // [BARU] Hapus Voucher
+		admin.PUT("/vouchers/:id/toggle", handler.ToggleVoucherStatus) // Kill Switch
 
 		// Kontrol Presale
 		admin.PUT("/ticket-variants/:id", handler.ToggleTicketVariant)

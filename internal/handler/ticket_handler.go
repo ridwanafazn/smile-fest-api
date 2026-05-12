@@ -14,7 +14,7 @@ import (
 
 // GetTicketInfo godoc
 // @Summary      Get Ticket Info
-// @Description  Mengambil data harga dan tipe tiket yang aktif dari database
+// @Description  Mengambil data harga dan tipe tiket yang sedang aktif berdasarkan periode tanggal hari ini
 // @Tags         public
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
@@ -22,8 +22,9 @@ import (
 func GetTicketInfo(c *gin.Context) {
 	var ticketVariants []model.TicketVariant
 
-	// Ambil semua data tiket dari database
-	if err := config.DB.Find(&ticketVariants).Error; err != nil {
+	now := time.Now()
+	// TAHAP 3 (Poin 7): Filter ketat berdasarkan waktu. Tiket hanya muncul jika hari ini berada di antara start_date dan end_date.
+	if err := config.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&ticketVariants).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
 		return
 	}
@@ -36,7 +37,7 @@ func GetTicketInfo(c *gin.Context) {
 
 // TrackTicket godoc
 // @Summary      Track E-Ticket
-// @Description  Peserta mencari UUID tiket mereka jika lupa/tidak dapat email
+// @Description  Peserta mencari tiket grup mereka jika lupa/tidak dapat email
 // @Tags         public
 // @Produce      json
 // @Param        order_id  query     string  true  "Order ID (SMILE-xxx)"
@@ -53,16 +54,15 @@ func TrackTicket(c *gin.Context) {
 	}
 
 	var transaction model.Transaction
-	if err := config.DB.Where("id = ? AND customer_email = ?", orderID, email).First(&transaction).Error; err != nil {
+	// Preload "Tickets" karena sekarang 1 transaksi punya BANYAK tiket
+	if err := config.DB.Preload("Tickets").Where("id = ? AND customer_email = ?", orderID, email).First(&transaction).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Data tidak ditemukan. Pastikan Order ID dan Email benar."})
 		return
 	}
 
-	// PERUBAHAN: Jika belum lunas (pending/expire), kembalikan statusnya (200 OK) tanpa UUID tiket
 	if transaction.Status != "settlement" {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Status transaksi ditemukan",
-			// Properti ini harus sama persis dengan interface TrackResponse di FE
 			"data": gin.H{
 				"order_id":      transaction.ID,
 				"customer_name": transaction.CustomerName,
@@ -72,19 +72,21 @@ func TrackTicket(c *gin.Context) {
 		return
 	}
 
-	var ticket model.Ticket
-	if err := config.DB.Where("transaction_id = ?", transaction.ID).First(&ticket).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Tiket belum diterbitkan. Hubungi panitia."})
-		return
+	// TAHAP 3 (Poin 8): Menyesuaikan respon untuk multi-tiket.
+	// Menyediakan 'ticket_uuid' pertama (sebagai backward compatibility ke FE yang lama)
+	// dan array 'tickets' untuk render banyak QR code di FE yang baru.
+	firstTicketUUID := ""
+	if len(transaction.Tickets) > 0 {
+		firstTicketUUID = transaction.Tickets[0].ID.String()
 	}
 
-	// PERUBAHAN: Transaksi lunas, kirimkan data lengkap beserta UUID Tiket (disesuaikan propertinya)
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Tiket berhasil ditemukan",
 		"data": gin.H{
 			"order_id":      transaction.ID,
 			"customer_name": transaction.CustomerName,
-			"ticket_uuid":   ticket.ID, // Diubah namanya jadi ticket_uuid agar sesuai dengan FE
+			"ticket_uuid":   firstTicketUUID,
+			"tickets":       transaction.Tickets, // Array lengkap untuk semua peserta grup
 			"status":        transaction.Status,
 		},
 	})
@@ -94,10 +96,10 @@ func TrackTicket(c *gin.Context) {
 
 // ToggleTicketVariant godoc
 // @Summary      Toggle Ticket Variant Status
-// @Description  Admin membuka atau menutup penjualan fase tiket (Presale 1, dll)
+// @Description  Admin membuka atau menutup penjualan fase tiket secara manual (Kill switch)
 // @Tags         admin
 // @Produce      json
-// @Param        id   path      string  true  "Variant ID (contoh: TICKET-PRESALE-1)"
+// @Param        id   path      string  true  "Variant ID"
 // @Success      200  {object}  map[string]interface{}
 // @Security     BearerAuth
 // @Router       /api/admin/ticket-variants/{id} [put]
@@ -138,7 +140,7 @@ func ToggleTicketVariant(c *gin.Context) {
 // @Router       /api/scanner/validate-ticket [post]
 func ValidateTicket(c *gin.Context) {
 	var input struct {
-		TicketID string `json:"ticket_id" binding:"required"` // Berisi UUID dari QR Code
+		TicketID string `json:"ticket_id" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -147,23 +149,20 @@ func ValidateTicket(c *gin.Context) {
 	}
 
 	var ticket model.Ticket
-	// Preload transaksi supaya kita bisa ambil nama pemesannya (biar panitia bisa nyapa orangnya)
 	if err := config.DB.Preload("Transaction").Where("id = ?", input.TicketID).First(&ticket).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "X QR Code tidak valid atau tiket tidak ditemukan"})
 		return
 	}
 
-	// Cek apakah tiket sudah pernah di-scan sebelumnya (Mencegah tiket dobel)
 	if ticket.IsScanned {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":         "TIKET SUDAH DIGUNAKAN!",
 			"scanned_at":    ticket.ScannedAt,
-			"customer_name": ticket.Transaction.CustomerName,
+			"customer_name": ticket.AttendeeName, // Kini menyapa nama spesifik pemegang tiket, bukan si pembeli
 		})
 		return
 	}
 
-	// Lolos pengecekan: Update status tiket jadi scanned
 	now := time.Now()
 	ticket.IsScanned = true
 	ticket.ScannedAt = &now
@@ -175,7 +174,7 @@ func ValidateTicket(c *gin.Context) {
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":       "Validasi berhasil! Akses diizinkan.",
-		"customer_name": ticket.Transaction.CustomerName,
+		"customer_name": ticket.AttendeeName,
 		"ticket_id":     ticket.ID,
 	})
 }
@@ -192,7 +191,12 @@ func GetScannerStats(c *gin.Context) {
 	var totalTickets int64
 	var scannedTickets int64
 
-	config.DB.Model(&model.Ticket{}).Count(&totalTickets)
+	// Hanya hitung tiket yang pembayarannya LUNAS
+	config.DB.Model(&model.Ticket{}).
+		Joins("JOIN transactions ON transactions.id = tickets.transaction_id").
+		Where("transactions.status = ?", "settlement").
+		Count(&totalTickets)
+
 	config.DB.Model(&model.Ticket{}).Where("is_scanned = ?", true).Count(&scannedTickets)
 
 	c.JSON(http.StatusOK, gin.H{

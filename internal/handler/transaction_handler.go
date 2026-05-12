@@ -12,15 +12,22 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 	midtransPkg "github.com/ridwanafazn/smile-fest-api/pkg/midtrans"
+	"github.com/ridwanafazn/smile-fest-api/pkg/utils" // Import servis email
 	"gorm.io/gorm"
 )
 
+// TAHAP 3 (Poin 8): Struktur Input Checkout Grup
+type Attendee struct {
+	Name string `json:"name" binding:"required"`
+}
+
 type CheckoutInput struct {
-	TicketType    string `json:"ticket_type" binding:"required"` // TICKET-PRESALE-1, dll
-	CustomerName  string `json:"customer_name" binding:"required"`
-	CustomerEmail string `json:"customer_email" binding:"required,email"`
-	CustomerPhone string `json:"customer_phone" binding:"required"`
-	VoucherCode   string `json:"voucher_code"` // Opsional
+	TicketType    string     `json:"ticket_type" binding:"required"`
+	CustomerName  string     `json:"customer_name" binding:"required"`
+	CustomerEmail string     `json:"customer_email" binding:"required,email"`
+	CustomerPhone string     `json:"customer_phone" binding:"required"`
+	VoucherCode   string     `json:"voucher_code"`
+	Attendees     []Attendee `json:"attendees" binding:"required,min=1"` // Menampung nama-nama anggota grup
 }
 
 // Checkout godoc
@@ -29,7 +36,7 @@ type CheckoutInput struct {
 // @Tags         public
 // @Accept       json
 // @Produce      json
-// @Param        input  body      CheckoutInput  true  "Data Pembeli dan Tiket"
+// @Param        input  body      CheckoutInput  true  "Data Pembeli dan Daftar Pemegang Tiket"
 // @Success      200    {object}  map[string]interface{}
 // @Router       /api/checkout [post]
 func Checkout(c *gin.Context) {
@@ -40,7 +47,6 @@ func Checkout(c *gin.Context) {
 		return
 	}
 
-	// 1. Tentukan Harga Dasar dari Database
 	var ticketVariant model.TicketVariant
 	if err := config.DB.Where("id = ?", input.TicketType).First(&ticketVariant).Error; err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Tipe tiket tidak valid atau tidak ditemukan"})
@@ -52,9 +58,9 @@ func Checkout(c *gin.Context) {
 		return
 	}
 
-	basePrice := ticketVariant.Price
+	qty := len(input.Attendees)
+	basePrice := ticketVariant.Price * float64(qty) // Total Harga = Harga Tiket x Jumlah Orang
 
-	// 2. Cek Voucher (Jika Ada)
 	var voucherID *uint
 	discount := float64(0)
 
@@ -73,11 +79,10 @@ func Checkout(c *gin.Context) {
 
 	finalPrice := basePrice - discount
 	if finalPrice < 0 {
-		finalPrice = 0 // Mencegah minus
+		finalPrice = 0
 	}
 
-	// 3. Buat Transaksi di Database
-	orderID := fmt.Sprintf("SMILE-%d", time.Now().Unix()) // Generate ID unik: SMILE-1715430000
+	orderID := fmt.Sprintf("SMILE-%d", time.Now().Unix())
 
 	transaction := model.Transaction{
 		ID:            orderID,
@@ -94,7 +99,17 @@ func Checkout(c *gin.Context) {
 		return
 	}
 
-	// 4. Request Snap Token ke Midtrans
+	// Buat Tiket-Tiket saat pending, status LUNAS-nya tergantung transaksi induk
+	var tickets []model.Ticket
+	for _, att := range input.Attendees {
+		tickets = append(tickets, model.Ticket{
+			TransactionID:   orderID,
+			TicketVariantID: input.TicketType,
+			AttendeeName:    att.Name,
+		})
+	}
+	config.DB.Create(&tickets)
+
 	req := &snap.Request{
 		TransactionDetails: midtrans.TransactionDetails{
 			OrderID:  orderID,
@@ -108,14 +123,13 @@ func Checkout(c *gin.Context) {
 		Items: &[]midtrans.ItemDetails{
 			{
 				ID:    input.TicketType,
-				Price: int64(basePrice),
-				Qty:   1,
-				Name:  "Tiket SMILE FEST 2026",
+				Price: int64(ticketVariant.Price),
+				Qty:   int32(qty),
+				Name:  ticketVariant.Name,
 			},
 		},
 	}
 
-	// Masukkan diskon sebagai item pengurang jika ada voucher
 	if discount > 0 {
 		items := append(*req.Items, midtrans.ItemDetails{
 			ID:    "DISCOUNT",
@@ -132,10 +146,8 @@ func Checkout(c *gin.Context) {
 		return
 	}
 
-	// Update SnapToken di database
 	config.DB.Model(&transaction).Update("snap_token", snapResp.Token)
 
-	// Kembalikan token ke Frontend untuk memunculkan popup QRIS
 	c.JSON(http.StatusOK, gin.H{
 		"message":    "Transaksi berhasil dibuat",
 		"order_id":   orderID,
@@ -165,18 +177,15 @@ func MidtransWebhook(c *gin.Context) {
 		return
 	}
 
-	// --- PENAMBAHAN KEAMANAN: Ekstrak field untuk validasi ---
 	statusCode, _ := notificationPayload["status_code"].(string)
 	grossAmount, _ := notificationPayload["gross_amount"].(string)
 	signatureKey, _ := notificationPayload["signature_key"].(string)
 	transactionStatus, _ := notificationPayload["transaction_status"].(string)
 
-	// Verifikasi Signature (Gembok Anti-Hacker)
 	if !midtransPkg.VerifySignatureKey(orderID, statusCode, grossAmount, signatureKey) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid signature key"})
 		return
 	}
-	// ---------------------------------------------------------
 
 	var transaction model.Transaction
 	if err := config.DB.Where("id = ?", orderID).First(&transaction).Error; err != nil {
@@ -184,40 +193,36 @@ func MidtransWebhook(c *gin.Context) {
 		return
 	}
 
-	// --- PENCEGAHAN PROSES GANDA ---
 	if transaction.Status == "settlement" {
 		c.JSON(http.StatusOK, gin.H{"status": "ok, already processed"})
 		return
 	}
-	// -------------------------------
 
-	// Update status transaksi berdasarkan notifikasi Midtrans
 	if transactionStatus == "settlement" || transactionStatus == "capture" {
-		transaction.Status = "settlement" // LUNAS
+		transaction.Status = "settlement"
 
-		// Jika ada voucher yang dipakai, tambahkan UsageCount
 		if transaction.VoucherID != nil {
 			config.DB.Model(&model.Voucher{}).Where("id = ?", transaction.VoucherID).UpdateColumn("usage_count", gorm.Expr("usage_count + ?", 1))
 		}
 
-		// Terbitkan e-ticket karena sudah lunas
-		ticket := model.Ticket{
-			TransactionID: transaction.ID,
-			IsScanned:     false,
-		}
-		// Abaikan error create ticket untuk webhook response
-		_ = config.DB.Create(&ticket)
+		// TAHAP 2 (Poin 1): Eksekusi Email Otomatis menggunakan Goroutine (agar tidak membebani Webhook)
+		go func() {
+			emailData := utils.EmailData{
+				CustomerName: transaction.CustomerName,
+				OrderID:      transaction.ID,
+				TicketLink:   fmt.Sprintf("https://smile-fest.com/track-ticket?order_id=%s&email=%s&transaction_status=settlement", transaction.ID, transaction.CustomerEmail),
+			}
+			// Pastikan sudah mengatur SMTP_HOST dll di .env jika ingin email benar-benar terkirim
+			_ = utils.SendTicketEmail(transaction.CustomerEmail, emailData)
+		}()
 
 	} else if transactionStatus == "cancel" || transactionStatus == "expire" || transactionStatus == "deny" {
-		transaction.Status = transactionStatus // GAGAL/EXPIRED
+		transaction.Status = transactionStatus
 	} else if transactionStatus == "pending" {
 		transaction.Status = "pending"
 	}
 
-	// Simpan perubahan status ke database
 	config.DB.Save(&transaction)
-
-	// Selalu kembalikan 200 OK agar Midtrans berhenti mengirim notifikasi ulang
 	c.JSON(http.StatusOK, gin.H{"status": "ok"})
 }
 
@@ -236,13 +241,14 @@ func GetDashboardStats(c *gin.Context) {
 	var totalTickets int64
 	var scannedTickets int64
 
-	// Hitung total pendapatan (hanya dari transaksi lunas)
 	config.DB.Model(&model.Transaction{}).Where("status = ?", "settlement").Select("COALESCE(SUM(total_amount), 0)").Scan(&totalRevenue)
 
-	// Hitung total tiket terjual
-	config.DB.Model(&model.Ticket{}).Count(&totalTickets)
+	// Hitung hanya tiket yang nempel ke transaksi lunas
+	config.DB.Model(&model.Ticket{}).
+		Joins("JOIN transactions ON transactions.id = tickets.transaction_id").
+		Where("transactions.status = ?", "settlement").
+		Count(&totalTickets)
 
-	// Hitung total tiket yang sudah di-scan di lapangan
 	config.DB.Model(&model.Ticket{}).Where("is_scanned = ?", true).Count(&scannedTickets)
 
 	c.JSON(http.StatusOK, gin.H{
@@ -268,16 +274,14 @@ func GetTransactions(c *gin.Context) {
 	search := c.Query("search")
 	var transactions []model.Transaction
 
-	// Buat query dasar, preload data Voucher jika ada biar admin tau dia pakai diskon apa
-	query := config.DB.Preload("Voucher")
+	// TAHAP 1 (Poin 3): Preload Tickets untuk mengetahui jumlah tiket dalam pesanan
+	query := config.DB.Preload("Voucher").Preload("Tickets")
 
 	if search != "" {
-		// Pencarian ILIKE untuk PostgreSQL (tidak case-sensitive)
 		searchParam := "%" + search + "%"
 		query = query.Where("customer_name ILIKE ? OR customer_email ILIKE ?", searchParam, searchParam)
 	}
 
-	// Ambil data, urutkan dari yang paling baru beli
 	if err := query.Order("created_at desc").Find(&transactions).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data transaksi"})
 		return

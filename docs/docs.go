@@ -57,7 +57,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Admin membuka atau menutup penjualan fase tiket (Presale 1, dll)",
+                "description": "Admin membuka atau menutup penjualan fase tiket secara manual (Kill switch)",
                 "produces": [
                     "application/json"
                 ],
@@ -68,7 +68,7 @@ const docTemplate = `{
                 "parameters": [
                     {
                         "type": "string",
-                        "description": "Variant ID (contoh: TICKET-PRESALE-1)",
+                        "description": "Variant ID",
                         "name": "id",
                         "in": "path",
                         "required": true
@@ -289,6 +289,86 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
+                "description": "Admin merubah potongan harga atau kuota voucher",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Update Voucher",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Voucher ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data Update Voucher",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.UpdateVoucherInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin menghapus voucher secara permanen",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Delete Voucher",
+                "parameters": [
+                    {
+                        "type": "integer",
+                        "description": "Voucher ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/vouchers/{id}/toggle": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
                 "description": "Admin mematikan (Kill Switch) atau menyalakan kembali voucher",
                 "produces": [
                     "application/json"
@@ -332,7 +412,7 @@ const docTemplate = `{
                 "summary": "Create Transaction Checkout",
                 "parameters": [
                     {
-                        "description": "Data Pembeli dan Tiket",
+                        "description": "Data Pembeli dan Daftar Pemegang Tiket",
                         "name": "input",
                         "in": "body",
                         "required": true,
@@ -479,7 +559,7 @@ const docTemplate = `{
         },
         "/api/tickets/info": {
             "get": {
-                "description": "Mengambil data harga dan tipe tiket yang aktif dari database",
+                "description": "Mengambil data harga dan tipe tiket yang sedang aktif berdasarkan periode tanggal hari ini",
                 "produces": [
                     "application/json"
                 ],
@@ -500,7 +580,7 @@ const docTemplate = `{
         },
         "/api/tickets/track": {
             "get": {
-                "description": "Peserta mencari UUID tiket mereka jika lupa/tidak dapat email",
+                "description": "Peserta mencari tiket grup mereka jika lupa/tidak dapat email",
                 "produces": [
                     "application/json"
                 ],
@@ -591,15 +671,35 @@ const docTemplate = `{
         }
     },
     "definitions": {
+        "internal_handler.Attendee": {
+            "type": "object",
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string"
+                }
+            }
+        },
         "internal_handler.CheckoutInput": {
             "type": "object",
             "required": [
+                "attendees",
                 "customer_email",
                 "customer_name",
                 "customer_phone",
                 "ticket_type"
             ],
             "properties": {
+                "attendees": {
+                    "description": "Menampung nama-nama anggota grup",
+                    "type": "array",
+                    "minItems": 1,
+                    "items": {
+                        "$ref": "#/definitions/internal_handler.Attendee"
+                    }
+                },
                 "customer_email": {
                     "type": "string"
                 },
@@ -610,11 +710,9 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "ticket_type": {
-                    "description": "TICKET-PRESALE-1, dll",
                     "type": "string"
                 },
                 "voucher_code": {
-                    "description": "Opsional",
                     "type": "string"
                 }
             }
@@ -670,6 +768,21 @@ const docTemplate = `{
                 },
                 "username": {
                     "type": "string"
+                }
+            }
+        },
+        "internal_handler.UpdateVoucherInput": {
+            "type": "object",
+            "required": [
+                "discount_amount",
+                "quota"
+            ],
+            "properties": {
+                "discount_amount": {
+                    "type": "number"
+                },
+                "quota": {
+                    "type": "integer"
                 }
             }
         }

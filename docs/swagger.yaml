@@ -1,7 +1,20 @@
 basePath: /
 definitions:
+  internal_handler.Attendee:
+    properties:
+      name:
+        type: string
+    required:
+    - name
+    type: object
   internal_handler.CheckoutInput:
     properties:
+      attendees:
+        description: Menampung nama-nama anggota grup
+        items:
+          $ref: '#/definitions/internal_handler.Attendee'
+        minItems: 1
+        type: array
       customer_email:
         type: string
       customer_name:
@@ -9,12 +22,11 @@ definitions:
       customer_phone:
         type: string
       ticket_type:
-        description: TICKET-PRESALE-1, dll
         type: string
       voucher_code:
-        description: Opsional
         type: string
     required:
+    - attendees
     - customer_email
     - customer_name
     - customer_phone
@@ -57,6 +69,16 @@ definitions:
     - password
     - username
     type: object
+  internal_handler.UpdateVoucherInput:
+    properties:
+      discount_amount:
+        type: number
+      quota:
+        type: integer
+    required:
+    - discount_amount
+    - quota
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -89,9 +111,10 @@ paths:
       - admin
   /api/admin/ticket-variants/{id}:
     put:
-      description: Admin membuka atau menutup penjualan fase tiket (Presale 1, dll)
+      description: Admin membuka atau menutup penjualan fase tiket secara manual (Kill
+        switch)
       parameters:
-      - description: 'Variant ID (contoh: TICKET-PRESALE-1)'
+      - description: Variant ID
         in: path
         name: id
         required: true
@@ -234,6 +257,57 @@ paths:
       tags:
       - admin
   /api/admin/vouchers/{id}:
+    delete:
+      description: Admin menghapus voucher secara permanen
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Delete Voucher
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: Admin merubah potongan harga atau kuota voucher
+      parameters:
+      - description: Voucher ID
+        in: path
+        name: id
+        required: true
+        type: integer
+      - description: Data Update Voucher
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.UpdateVoucherInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Update Voucher
+      tags:
+      - admin
+  /api/admin/vouchers/{id}/toggle:
     put:
       description: Admin mematikan (Kill Switch) atau menyalakan kembali voucher
       parameters:
@@ -261,7 +335,7 @@ paths:
       - application/json
       description: Membuat transaksi dan mendapatkan Snap Token dari Midtrans
       parameters:
-      - description: Data Pembeli dan Tiket
+      - description: Data Pembeli dan Daftar Pemegang Tiket
         in: body
         name: input
         required: true
@@ -361,7 +435,8 @@ paths:
       - auth
   /api/tickets/info:
     get:
-      description: Mengambil data harga dan tipe tiket yang aktif dari database
+      description: Mengambil data harga dan tipe tiket yang sedang aktif berdasarkan
+        periode tanggal hari ini
       produces:
       - application/json
       responses:
@@ -375,7 +450,7 @@ paths:
       - public
   /api/tickets/track:
     get:
-      description: Peserta mencari UUID tiket mereka jika lupa/tidak dapat email
+      description: Peserta mencari tiket grup mereka jika lupa/tidak dapat email
       parameters:
       - description: Order ID (SMILE-xxx)
         in: query

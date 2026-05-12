@@ -36,6 +36,7 @@ func SetupRouter() *gin.Engine {
 
 	// Auth
 	r.POST("/api/login", handler.Login)
+	r.POST("/api/seed-admin", handler.SeedAdmin)
 
 	// Info & Lacak Tiket
 	r.GET("/api/tickets/info", handler.GetTicketInfo)

@@ -47,6 +47,7 @@ func VerifyPayment(c *gin.Context) {
 		return
 	}
 
+	// --- JIKA ACTION == "reject" ---
 	if input.Action == "reject" {
 		transaction.Status = "cancel"
 		config.DB.Save(&transaction)
@@ -55,32 +56,51 @@ func VerifyPayment(c *gin.Context) {
 	}
 
 	// --- JIKA ACTION == "approve" ---
-	transaction.Status = "settlement"
+	// Menggunakan GORM Transaction untuk menjamin integritas data (ACID)
+	err := config.DB.Transaction(func(tx *gorm.DB) error {
+		transaction.Status = "settlement"
 
-	// Potong kuota voucher jika transaksi menggunakan voucher
-	if transaction.VoucherID != nil {
-		var qty int64
-		config.DB.Model(&model.Ticket{}).Where("transaction_id = ?", transaction.ID).Count(&qty)
-		if qty > 0 {
-			config.DB.Model(&model.Voucher{}).Where("id = ?", transaction.VoucherID).UpdateColumn("usage_count", gorm.Expr("usage_count + ?", qty))
+		// Potong kuota voucher jika transaksi menggunakan voucher
+		if transaction.VoucherID != nil {
+			var qty int64
+			if err := tx.Model(&model.Ticket{}).Where("transaction_id = ?", transaction.ID).Count(&qty).Error; err != nil {
+				return err
+			}
+			if qty > 0 {
+				if err := tx.Model(&model.Voucher{}).Where("id = ?", transaction.VoucherID).UpdateColumn("usage_count", gorm.Expr("usage_count + ?", qty)).Error; err != nil {
+					return err
+				}
+			}
 		}
-	}
 
-	config.DB.Save(&transaction)
+		// Simpan perubahan status transaksi
+		if err := tx.Save(&transaction).Error; err != nil {
+			return err
+		}
+
+		return nil // Return nil berarti transaksi DB di-commit secara permanen
+	})
+
+	if err != nil {
+		log.Printf("❌ [DB ERROR] Gagal menyetujui transaksi %s: %v\n", transaction.ID, err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Terjadi kesalahan internal saat memproses persetujuan."})
+		return
+	}
 
 	// Trigger Pengiriman Email Tiket via GAS (Berjalan di background via goroutine)
 	go func() {
 		emailData := utils.EmailData{
 			CustomerName: transaction.CustomerName,
 			OrderID:      transaction.ID,
-			TicketLink:   fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", transaction.ID, transaction.CustomerEmail),
+			// Diselaraskan dengan domain frontend sebelumnya agar konsisten
+			TicketLink: fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", transaction.ID, transaction.CustomerEmail),
 		}
 
-		err := utils.SendTicketEmail(transaction.CustomerEmail, emailData)
-		if err != nil {
-			log.Printf("❌ [EMAIL ERROR] Gagal mengirim tiket ke %s. Pesan Error: %v\n", transaction.CustomerEmail, err)
+		errEmail := utils.SendTicketEmail(transaction.CustomerEmail, emailData)
+		if errEmail != nil {
+			log.Printf("❌ [EMAIL ERROR] Gagal mengirim tiket ke %s. Pesan Error: %v\n", transaction.CustomerEmail, errEmail)
 		} else {
-			log.Printf("✅ [EMAIL SUCCESS] Tiket berhasil dikirim ke %s\n", transaction.CustomerEmail)
+			log.Printf("✅ [EMAIL SUCCESS] Tiket lunas berhasil dikirim ke %s\n", transaction.CustomerEmail)
 		}
 	}()
 

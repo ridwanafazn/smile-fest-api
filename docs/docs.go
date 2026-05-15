@@ -446,7 +446,7 @@ const docTemplate = `{
         },
         "/api/checkout": {
             "post": {
-                "description": "Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi tiket selama 24 jam.",
+                "description": "Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi tiket selama 24 jam. Mengirim email intruksi pembayaran dengan goroutine.",
                 "consumes": [
                     "application/json"
                 ],
@@ -627,14 +627,14 @@ const docTemplate = `{
         },
         "/api/tickets/track": {
             "get": {
-                "description": "Peserta mencari tiket grup mereka jika lupa/tidak dapat email atau untuk melanjutkan pembayaran (Resume Payment)",
+                "description": "Peserta mencari tiket mereka, mengecek status verifikasi admin, atau melihat instruksi pembayaran manual (jika status masih pending).",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "public"
                 ],
-                "summary": "Track E-Ticket",
+                "summary": "Track E-Ticket \u0026 Payment Status",
                 "parameters": [
                     {
                         "type": "string",

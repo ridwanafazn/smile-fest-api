@@ -12,6 +12,7 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 	"github.com/ridwanafazn/smile-fest-api/pkg/cloudinary"
+	"github.com/ridwanafazn/smile-fest-api/pkg/utils" // Import utils untuk memanggil fungsi pengirim email
 )
 
 type Attendee struct {
@@ -38,7 +39,7 @@ type CheckoutInput struct {
 
 // Checkout godoc
 // @Summary      Create Transaction Checkout (Manual Transfer)
-// @Description  Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi tiket selama 24 jam.
+// @Description  Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi tiket selama 24 jam. Mengirim email intruksi pembayaran dengan goroutine.
 // @Tags         public
 // @Accept       json
 // @Produce      json
@@ -154,6 +155,26 @@ func Checkout(c *gin.Context) {
 		})
 	}
 	config.DB.Create(&tickets)
+
+	// --- LOGIKA "MAGIC LINK" EMAIL (ASYNCHRONOUS) ---
+	// Menyusun format nominal presisi untuk diselipkan ke email
+	formattedAmount := fmt.Sprintf("Rp %s", utils.FormatRupiah(totalTransfer))
+
+	// Konstruksi Magic Link yang jika diklik akan langsung memuat data user di TrackTicketPage
+	trackLink := fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", orderID, input.CustomerEmail)
+
+	// Jalankan di Goroutine (background process) agar tidak menahan response ke Frontend
+	go func() {
+		err := utils.SendInstructionEmail(input.CustomerEmail, utils.InstructionData{
+			CustomerName: input.CustomerName,
+			OrderID:      orderID,
+			TrackLink:    trackLink,
+			TotalAmount:  formattedAmount,
+		})
+		if err != nil {
+			log.Printf("❌ [EMAIL ERROR] Gagal mengirim instruksi ke %s: %v\n", input.CustomerEmail, err)
+		}
+	}()
 
 	c.JSON(http.StatusOK, gin.H{
 		"message":       "Transaksi berhasil dibuat",

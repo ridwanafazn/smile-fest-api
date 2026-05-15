@@ -18,6 +18,7 @@ func SetupRouter() *gin.Engine {
 
 	// --- KONFIGURASI CORS ---
 	r.Use(cors.New(cors.Config{
+		// PERBAIKAN: Menambahkan domain resmi smile-festival.pages.dev agar browser tidak memblokir request API
 		AllowOrigins:     []string{"http://localhost:5173", "https://smile-fest.com", "https://smile-festival.ridwanafzn.workers.dev", "https://smile-festival.pages.dev"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept"},

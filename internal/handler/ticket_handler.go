@@ -23,7 +23,6 @@ func GetTicketInfo(c *gin.Context) {
 	var ticketVariants []model.TicketVariant
 
 	now := time.Now()
-	// TAHAP 3 (Poin 7): Filter ketat berdasarkan waktu. Tiket hanya muncul jika hari ini berada di antara start_date dan end_date.
 	if err := config.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&ticketVariants).Error; err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
 		return
@@ -37,7 +36,7 @@ func GetTicketInfo(c *gin.Context) {
 
 // TrackTicket godoc
 // @Summary      Track E-Ticket
-// @Description  Peserta mencari tiket grup mereka jika lupa/tidak dapat email
+// @Description  Peserta mencari tiket grup mereka jika lupa/tidak dapat email atau untuk melanjutkan pembayaran (Resume Payment)
 // @Tags         public
 // @Produce      json
 // @Param        order_id  query     string  true  "Order ID (SMILE-xxx)"
@@ -54,12 +53,12 @@ func TrackTicket(c *gin.Context) {
 	}
 
 	var transaction model.Transaction
-	// Preload "Tickets" karena sekarang 1 transaksi punya BANYAK tiket
 	if err := config.DB.Preload("Tickets").Where("id = ? AND customer_email = ?", orderID, email).First(&transaction).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Data tidak ditemukan. Pastikan Order ID dan Email benar."})
 		return
 	}
 
+	// TAHAP 1 (Poin 4): Menyelamatkan "Abandoned Cart". Jika pending, kirim snap_token agar frontend bisa merender ulang popup bayar.
 	if transaction.Status != "settlement" {
 		c.JSON(http.StatusOK, gin.H{
 			"message": "Status transaksi ditemukan",
@@ -67,14 +66,12 @@ func TrackTicket(c *gin.Context) {
 				"order_id":      transaction.ID,
 				"customer_name": transaction.CustomerName,
 				"status":        transaction.Status,
+				"snap_token":    transaction.SnapToken,
 			},
 		})
 		return
 	}
 
-	// TAHAP 3 (Poin 8): Menyesuaikan respon untuk multi-tiket.
-	// Menyediakan 'ticket_uuid' pertama (sebagai backward compatibility ke FE yang lama)
-	// dan array 'tickets' untuk render banyak QR code di FE yang baru.
 	firstTicketUUID := ""
 	if len(transaction.Tickets) > 0 {
 		firstTicketUUID = transaction.Tickets[0].ID.String()
@@ -86,7 +83,7 @@ func TrackTicket(c *gin.Context) {
 			"order_id":      transaction.ID,
 			"customer_name": transaction.CustomerName,
 			"ticket_uuid":   firstTicketUUID,
-			"tickets":       transaction.Tickets, // Array lengkap untuk semua peserta grup
+			"tickets":       transaction.Tickets,
 			"status":        transaction.Status,
 		},
 	})
@@ -158,7 +155,7 @@ func ValidateTicket(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":         "TIKET SUDAH DIGUNAKAN!",
 			"scanned_at":    ticket.ScannedAt,
-			"customer_name": ticket.AttendeeName, // Kini menyapa nama spesifik pemegang tiket, bukan si pembeli
+			"customer_name": ticket.AttendeeName,
 		})
 		return
 	}
@@ -191,7 +188,6 @@ func GetScannerStats(c *gin.Context) {
 	var totalTickets int64
 	var scannedTickets int64
 
-	// Hanya hitung tiket yang pembayarannya LUNAS
 	config.DB.Model(&model.Ticket{}).
 		Joins("JOIN transactions ON transactions.id = tickets.transaction_id").
 		Where("transactions.status = ?", "settlement").

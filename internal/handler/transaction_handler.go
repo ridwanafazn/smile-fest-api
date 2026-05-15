@@ -12,22 +12,31 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 	midtransPkg "github.com/ridwanafazn/smile-fest-api/pkg/midtrans"
-	"github.com/ridwanafazn/smile-fest-api/pkg/utils" // Import servis email
+	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
 	"gorm.io/gorm"
 )
 
-// TAHAP 3 (Poin 8): Struktur Input Checkout Grup
 type Attendee struct {
 	Name string `json:"name" binding:"required"`
 }
 
+// CheckoutInput diperbarui untuk menangkap data survei
 type CheckoutInput struct {
-	TicketType    string     `json:"ticket_type" binding:"required"`
-	CustomerName  string     `json:"customer_name" binding:"required"`
-	CustomerEmail string     `json:"customer_email" binding:"required,email"`
-	CustomerPhone string     `json:"customer_phone" binding:"required"`
-	VoucherCode   string     `json:"voucher_code"`
-	Attendees     []Attendee `json:"attendees" binding:"required,min=1"` // Menampung nama-nama anggota grup
+	TicketType    string `json:"ticket_type" binding:"required"`
+	CustomerName  string `json:"customer_name" binding:"required"`
+	CustomerEmail string `json:"customer_email" binding:"required,email"`
+	CustomerPhone string `json:"customer_phone" binding:"required"`
+
+	// Field Survei
+	SurveyAge        string `json:"survey_age"`
+	SurveyCity       string `json:"survey_city"`
+	SurveyEducation  string `json:"survey_education"`
+	SurveyJob        string `json:"survey_job"`
+	SurveyMotivation string `json:"survey_motivation"`
+	SurveyAction     string `json:"survey_action"`
+
+	VoucherCode string     `json:"voucher_code"`
+	Attendees   []Attendee `json:"attendees" binding:"required,min=1"`
 }
 
 // Checkout godoc
@@ -36,7 +45,7 @@ type CheckoutInput struct {
 // @Tags         public
 // @Accept       json
 // @Produce      json
-// @Param        input  body      CheckoutInput  true  "Data Pembeli dan Daftar Pemegang Tiket"
+// @Param        input  body      CheckoutInput  true  "Data Pembeli, Survei, dan Daftar Pemegang Tiket"
 // @Success      200    {object}  map[string]interface{}
 // @Router       /api/checkout [post]
 func Checkout(c *gin.Context) {
@@ -59,7 +68,7 @@ func Checkout(c *gin.Context) {
 	}
 
 	qty := len(input.Attendees)
-	basePrice := ticketVariant.Price * float64(qty) // Total Harga = Harga Tiket x Jumlah Orang
+	basePrice := ticketVariant.Price * float64(qty)
 
 	var voucherID *uint
 	discount := float64(0)
@@ -67,13 +76,23 @@ func Checkout(c *gin.Context) {
 	if input.VoucherCode != "" {
 		var voucher model.Voucher
 		if err := config.DB.Where("code = ?", strings.ToUpper(input.VoucherCode)).First(&voucher).Error; err == nil {
-			if voucher.IsActive && voucher.UsageCount < voucher.Quota {
-				discount = voucher.DiscountAmount
-				voucherID = &voucher.ID
-			} else {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher tidak valid atau kuota habis"})
+			if !voucher.IsActive {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher sedang tidak aktif"})
 				return
 			}
+
+			// ATURAN EMAS: Cek apakah sisa kuota cukup untuk SELURUH tiket yang dibeli
+			if (voucher.Quota - voucher.UsageCount) < qty {
+				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Sisa kuota voucher tidak cukup untuk %d tiket", qty)})
+				return
+			}
+
+			// LOGIKA MULTIPLIER: Diskon dikalikan jumlah tiket
+			discount = voucher.DiscountAmount * float64(qty)
+			voucherID = &voucher.ID
+		} else {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher tidak valid"})
+			return
 		}
 	}
 
@@ -85,13 +104,19 @@ func Checkout(c *gin.Context) {
 	orderID := fmt.Sprintf("SMILE-%d", time.Now().Unix())
 
 	transaction := model.Transaction{
-		ID:            orderID,
-		CustomerName:  input.CustomerName,
-		CustomerEmail: input.CustomerEmail,
-		CustomerPhone: input.CustomerPhone,
-		TotalAmount:   finalPrice,
-		Status:        "pending",
-		VoucherID:     voucherID,
+		ID:               orderID,
+		CustomerName:     input.CustomerName,
+		CustomerEmail:    input.CustomerEmail,
+		CustomerPhone:    input.CustomerPhone,
+		SurveyAge:        input.SurveyAge,
+		SurveyCity:       input.SurveyCity,
+		SurveyEducation:  input.SurveyEducation,
+		SurveyJob:        input.SurveyJob,
+		SurveyMotivation: input.SurveyMotivation,
+		SurveyAction:     input.SurveyAction,
+		TotalAmount:      finalPrice,
+		Status:           "pending",
+		VoucherID:        voucherID,
 	}
 
 	if err := config.DB.Create(&transaction).Error; err != nil {
@@ -99,7 +124,6 @@ func Checkout(c *gin.Context) {
 		return
 	}
 
-	// Buat Tiket-Tiket saat pending, status LUNAS-nya tergantung transaksi induk
 	var tickets []model.Ticket
 	for _, att := range input.Attendees {
 		tickets = append(tickets, model.Ticket{
@@ -133,8 +157,8 @@ func Checkout(c *gin.Context) {
 	if discount > 0 {
 		items := append(*req.Items, midtrans.ItemDetails{
 			ID:    "DISCOUNT",
-			Price: -int64(discount),
-			Qty:   1,
+			Price: -int64(voucher.DiscountAmount), // Menampilkan harga diskon per item di invoice Midtrans
+			Qty:   int32(qty),
 			Name:  "Diskon Voucher",
 		})
 		req.Items = &items
@@ -201,18 +225,21 @@ func MidtransWebhook(c *gin.Context) {
 	if transactionStatus == "settlement" || transactionStatus == "capture" {
 		transaction.Status = "settlement"
 
+		// LOGIKA MULTIPLIER: Usage count voucher harus ditambah berdasarkan jumlah tiket, bukan cuma 1
 		if transaction.VoucherID != nil {
-			config.DB.Model(&model.Voucher{}).Where("id = ?", transaction.VoucherID).UpdateColumn("usage_count", gorm.Expr("usage_count + ?", 1))
+			var qty int64
+			config.DB.Model(&model.Ticket{}).Where("transaction_id = ?", transaction.ID).Count(&qty)
+			if qty > 0 {
+				config.DB.Model(&model.Voucher{}).Where("id = ?", transaction.VoucherID).UpdateColumn("usage_count", gorm.Expr("usage_count + ?", qty))
+			}
 		}
 
-		// TAHAP 2 (Poin 1): Eksekusi Email Otomatis menggunakan Goroutine (agar tidak membebani Webhook)
 		go func() {
 			emailData := utils.EmailData{
 				CustomerName: transaction.CustomerName,
 				OrderID:      transaction.ID,
-				TicketLink:   fmt.Sprintf("https://smile-fest.com/track-ticket?order_id=%s&email=%s&transaction_status=settlement", transaction.ID, transaction.CustomerEmail),
+				TicketLink:   fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s&transaction_status=settlement", transaction.ID, transaction.CustomerEmail),
 			}
-			// Pastikan sudah mengatur SMTP_HOST dll di .env jika ingin email benar-benar terkirim
 			_ = utils.SendTicketEmail(transaction.CustomerEmail, emailData)
 		}()
 
@@ -243,7 +270,6 @@ func GetDashboardStats(c *gin.Context) {
 
 	config.DB.Model(&model.Transaction{}).Where("status = ?", "settlement").Select("COALESCE(SUM(total_amount), 0)").Scan(&totalRevenue)
 
-	// Hitung hanya tiket yang nempel ke transaksi lunas
 	config.DB.Model(&model.Ticket{}).
 		Joins("JOIN transactions ON transactions.id = tickets.transaction_id").
 		Where("transactions.status = ?", "settlement").
@@ -263,7 +289,7 @@ func GetDashboardStats(c *gin.Context) {
 
 // GetTransactions godoc
 // @Summary      Get All Transactions
-// @Description  Melihat daftar riwayat transaksi peserta. Bisa mencari berdasarkan nama atau email.
+// @Description  Melihat daftar riwayat transaksi peserta.
 // @Tags         admin
 // @Produce      json
 // @Param        search  query     string  false  "Cari nama / email"
@@ -274,7 +300,6 @@ func GetTransactions(c *gin.Context) {
 	search := c.Query("search")
 	var transactions []model.Transaction
 
-	// TAHAP 1 (Poin 3): Preload Tickets untuk mengetahui jumlah tiket dalam pesanan
 	query := config.DB.Preload("Voucher").Preload("Tickets")
 
 	if search != "" {

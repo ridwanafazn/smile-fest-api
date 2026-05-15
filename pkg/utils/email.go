@@ -30,7 +30,7 @@ func SendTicketEmail(toEmail string, data EmailData) error {
 
 	auth := smtp.PlainAuth("", senderEmail, senderPassword, smtpHost)
 
-	// Template HTML Email Responsif
+	// Template HTML Email Responsif (Diperbarui copywrtiting-nya)
 	tmpl := `
 	<!DOCTYPE html>
 	<html>
@@ -39,7 +39,7 @@ func SendTicketEmail(toEmail string, data EmailData) error {
 			<h2 style="color: #292524;">Halo, {{.CustomerName}}!</h2>
 			<p>Terima kasih telah mengamankan tiket <strong>SMILE FEST 2026</strong>.</p>
 			<p>Pembayaran Anda untuk Order ID <strong>{{.OrderID}}</strong> telah kami terima (LUNAS).</p>
-			<p>Klik tombol di bawah ini untuk melihat dan menyimpan E-Ticket (QR Code) Anda. Tunjukkan QR Code tersebut pada panitia saat hari H.</p>
+			<p>Klik tombol di bawah ini untuk melihat status pesanan Anda. <strong>PENTING:</strong> Anda harus melengkapi kuesioner singkat di halaman pelacakan sebelum sistem menerbitkan QR Code Anda.</p>
 			<div style="text-align: center; margin: 30px 0;">
 				<a href="{{.TicketLink}}" style="background-color: #292524; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">Buka E-Ticket Saya</a>
 			</div>

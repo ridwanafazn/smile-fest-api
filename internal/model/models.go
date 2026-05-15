@@ -28,15 +28,24 @@ type Voucher struct {
 }
 
 type Transaction struct {
-	ID            string  `gorm:"primaryKey" json:"id"`
-	CustomerName  string  `gorm:"not null" json:"customer_name"`
-	CustomerEmail string  `gorm:"not null" json:"customer_email"`
-	CustomerPhone string  `gorm:"not null" json:"customer_phone"`
-	TotalAmount   float64 `gorm:"not null" json:"total_amount"`
-	Status        string  `gorm:"default:'pending'" json:"status"`
-	VoucherID     *uint   `json:"voucher_id"`
-	Voucher       Voucher `json:"-"`
-	SnapToken     string  `json:"snap_token"`
+	ID            string `gorm:"primaryKey" json:"id"`
+	CustomerName  string `gorm:"not null" json:"customer_name"`
+	CustomerEmail string `gorm:"not null" json:"customer_email"`
+	CustomerPhone string `gorm:"not null" json:"customer_phone"`
+
+	// Data Survei Tambahan
+	SurveyAge        string `json:"survey_age"`
+	SurveyCity       string `json:"survey_city"`
+	SurveyEducation  string `json:"survey_education"`
+	SurveyJob        string `json:"survey_job"`
+	SurveyMotivation string `json:"survey_motivation"`
+	SurveyAction     string `json:"survey_action"`
+
+	TotalAmount float64 `gorm:"not null" json:"total_amount"`
+	Status      string  `gorm:"default:'pending'" json:"status"`
+	VoucherID   *uint   `json:"voucher_id"`
+	Voucher     Voucher `json:"-"`
+	SnapToken   string  `json:"snap_token"`
 	// Relasi One-to-Many: 1 Transaksi bisa memegang BANYAK Tiket
 	Tickets   []Ticket  `gorm:"foreignKey:TransactionID" json:"tickets"`
 	CreatedAt time.Time `json:"created_at"`

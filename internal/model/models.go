@@ -33,19 +33,31 @@ type Transaction struct {
 	CustomerEmail string `gorm:"not null" json:"customer_email"`
 	CustomerPhone string `gorm:"not null" json:"customer_phone"`
 
-	// Data Survei Tambahan
-	SurveyAge        string `json:"survey_age"`
-	SurveyCity       string `json:"survey_city"`
-	SurveyEducation  string `json:"survey_education"`
-	SurveyJob        string `json:"survey_job"`
-	SurveyMotivation string `json:"survey_motivation"`
-	SurveyAction     string `json:"survey_action"`
+	// --- DATA PEMESAN UTAMA (MENGGANTIKAN LABEL SURVEI) ---
+	ProfileAge        string `json:"profile_age"`
+	ProfileCity       string `json:"profile_city"`
+	ProfileEducation  string `json:"profile_education"`
+	ProfileJob        string `json:"profile_job"`
+	ProfileMotivation string `json:"profile_motivation"`
 
-	TotalAmount float64 `gorm:"not null" json:"total_amount"`
-	Status      string  `gorm:"default:'pending'" json:"status"`
-	VoucherID   *uint   `json:"voucher_id"`
-	Voucher     Voucher `json:"-"`
-	SnapToken   string  `json:"snap_token"`
+	// --- UNDANGAN KONTRIBUSI ---
+	ContributionRole string `json:"contribution_role"` // Donatur, Relawan, Update Info, Peserta Saja
+
+	// --- MANUAL PAYMENT SYSTEM ---
+	TotalAmount     float64   `gorm:"not null" json:"total_amount"`            // Total asli + Kode Unik
+	UniqueCode      int       `gorm:"not null" json:"unique_code"`             // 3 Digit Angka Unik
+	SessionBatch    int       `gorm:"not null;default:1" json:"session_batch"` // 1 (Pagi) atau 2 (Siang)
+	PaymentProofURL string    `json:"payment_proof_url"`                       // URL Gambar dari Cloudinary
+	ExpiresAt       time.Time `json:"expires_at"`                              // Batas waktu transfer 24 Jam
+
+	// Status: 'pending', 'waiting_verification', 'settlement', 'cancel', 'expired'
+	Status    string  `gorm:"default:'pending'" json:"status"`
+	VoucherID *uint   `json:"voucher_id"`
+	Voucher   Voucher `json:"-"`
+
+	// Legacy Midtrans (Disimpan untuk cadangan/rollback)
+	SnapToken string `json:"snap_token"`
+
 	// Relasi One-to-Many: 1 Transaksi bisa memegang BANYAK Tiket
 	Tickets   []Ticket  `gorm:"foreignKey:TransactionID" json:"tickets"`
 	CreatedAt time.Time `json:"created_at"`

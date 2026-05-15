@@ -10,16 +10,28 @@ definitions:
   internal_handler.CheckoutInput:
     properties:
       attendees:
-        description: Menampung nama-nama anggota grup
         items:
           $ref: '#/definitions/internal_handler.Attendee'
         minItems: 1
         type: array
+      contribution_role:
+        type: string
       customer_email:
         type: string
       customer_name:
         type: string
       customer_phone:
+        type: string
+      profile_age:
+        description: Menggantikan field survei dengan Profile
+        type: string
+      profile_city:
+        type: string
+      profile_education:
+        type: string
+      profile_job:
+        type: string
+      profile_motivation:
         type: string
       ticket_type:
         type: string
@@ -79,6 +91,16 @@ definitions:
     - discount_amount
     - quota
     type: object
+  internal_handler.VerifyPaymentInput:
+    properties:
+      action:
+        enum:
+        - approve
+        - reject
+        type: string
+    required:
+    - action
+    type: object
 host: localhost:8080
 info:
   contact:
@@ -134,8 +156,7 @@ paths:
       - admin
   /api/admin/transactions:
     get:
-      description: Melihat daftar riwayat transaksi peserta. Bisa mencari berdasarkan
-        nama atau email.
+      description: Melihat daftar riwayat transaksi peserta.
       parameters:
       - description: Cari nama / email
         in: query
@@ -152,6 +173,37 @@ paths:
       security:
       - BearerAuth: []
       summary: Get All Transactions
+      tags:
+      - admin
+  /api/admin/transactions/{id}/verify:
+    put:
+      consumes:
+      - application/json
+      description: Admin melakukan persetujuan (approve) atau penolakan (reject) terhadap
+        bukti transfer peserta. Approve akan mengirimkan E-Ticket otomatis.
+      parameters:
+      - description: Order ID (Transaction ID)
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Aksi Verifikasi (approve/reject)
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/internal_handler.VerifyPaymentInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      security:
+      - BearerAuth: []
+      summary: Verify Manual Payment
       tags:
       - admin
   /api/admin/users:
@@ -333,7 +385,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Membuat transaksi dan mendapatkan Snap Token dari Midtrans
+      description: Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi
+        tiket selama 24 jam.
       parameters:
       - description: Data Pembeli dan Daftar Pemegang Tiket
         in: body
@@ -349,7 +402,7 @@ paths:
           schema:
             additionalProperties: true
             type: object
-      summary: Create Transaction Checkout
+      summary: Create Transaction Checkout (Manual Transfer)
       tags:
       - public
   /api/login:
@@ -450,7 +503,8 @@ paths:
       - public
   /api/tickets/track:
     get:
-      description: Peserta mencari tiket grup mereka jika lupa/tidak dapat email
+      description: Peserta mencari tiket grup mereka jika lupa/tidak dapat email atau
+        untuk melanjutkan pembayaran (Resume Payment)
       parameters:
       - description: Order ID (SMILE-xxx)
         in: query
@@ -471,6 +525,33 @@ paths:
             additionalProperties: true
             type: object
       summary: Track E-Ticket
+      tags:
+      - public
+  /api/transactions/{id}/upload-proof:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Mengunggah gambar bukti transfer untuk transaksi tertentu
+      parameters:
+      - description: Order ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: File Gambar Bukti Transfer (Max 2MB)
+        in: formData
+        name: file
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+      summary: Upload Payment Proof
       tags:
       - public
   /api/vouchers/validate:
@@ -494,22 +575,6 @@ paths:
       summary: Validate Voucher Code
       tags:
       - public
-  /api/webhook/midtrans:
-    post:
-      consumes:
-      - application/json
-      description: Menerima notifikasi status pembayaran dari server Midtrans
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Midtrans Payment Webhook
-      tags:
-      - webhook
 securityDefinitions:
   BearerAuth:
     in: header

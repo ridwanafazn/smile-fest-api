@@ -18,7 +18,6 @@ func SetupRouter() *gin.Engine {
 
 	// --- KONFIGURASI CORS ---
 	r.Use(cors.New(cors.Config{
-		// PERBAIKAN: Menambahkan domain resmi smile-festival.pages.dev agar browser tidak memblokir request API
 		AllowOrigins:     []string{"http://localhost:5173", "https://smile-fest.com", "https://smile-festival.ridwanafzn.workers.dev", "https://smile-festival.pages.dev"},
 		AllowMethods:     []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
 		AllowHeaders:     []string{"Origin", "Content-Type", "Authorization", "Accept"},
@@ -46,9 +45,12 @@ func SetupRouter() *gin.Engine {
 	// Info Voucher
 	r.GET("/api/vouchers/validate", handler.ValidateVoucher)
 
-	// Checkout & Webhook (Payment)
-	r.POST("/api/checkout", handler.Checkout)
-	r.POST("/api/webhook/midtrans", handler.MidtransWebhook)
+	// --- SISTEM PEMBAYARAN MANUAL ---
+	r.POST("/api/checkout", handler.Checkout)                         // Menghasilkan Kode Unik & Instruksi
+	r.POST("/api/transactions/:id/upload-proof", handler.UploadProof) // [BARU] Upload Bukti Transfer ke Cloudinary
+
+	// [DINONAKTIFKAN] Midtrans Webhook disembunyikan untuk beralih ke Manual Payment
+	// r.POST("/api/webhook/midtrans", handler.MidtransWebhook)
 
 	// --- ROUTE ADMIN (Hanya token dengan role 'admin') ---
 	admin := r.Group("/api/admin")
@@ -56,7 +58,10 @@ func SetupRouter() *gin.Engine {
 	{
 		// Observabilitas
 		admin.GET("/dashboard", handler.GetDashboardStats)
+
+		// Manajemen Transaksi (Manual Payment)
 		admin.GET("/transactions", handler.GetTransactions)
+		admin.PUT("/transactions/:id/verify", handler.VerifyPayment) // [BARU] Verifikasi Pembayaran & Kirim E-Ticket
 
 		// Manajemen User/Scanner
 		admin.POST("/users", handler.CreateUser)
@@ -66,9 +71,9 @@ func SetupRouter() *gin.Engine {
 		// Manajemen Voucher (CRUD Lengkap)
 		admin.POST("/vouchers", handler.CreateVoucher)
 		admin.GET("/vouchers", handler.GetVouchers)
-		admin.PUT("/vouchers/:id", handler.UpdateVoucher)              // [BARU] Edit Voucher
-		admin.DELETE("/vouchers/:id", handler.DeleteVoucher)           // [BARU] Hapus Voucher
-		admin.PUT("/vouchers/:id/toggle", handler.ToggleVoucherStatus) // Kill Switch
+		admin.PUT("/vouchers/:id", handler.UpdateVoucher)
+		admin.DELETE("/vouchers/:id", handler.DeleteVoucher)
+		admin.PUT("/vouchers/:id/toggle", handler.ToggleVoucherStatus)
 
 		// Kontrol Presale
 		admin.PUT("/ticket-variants/:id", handler.ToggleTicketVariant)

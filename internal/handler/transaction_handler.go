@@ -2,19 +2,16 @@ package handler
 
 import (
 	"fmt"
-	"log" // PERBAIKAN: Menambahkan modul log untuk mencetak pesan ke terminal/Railway
+	"log"
+	"math/rand"
 	"net/http"
 	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/midtrans/midtrans-go"
-	"github.com/midtrans/midtrans-go/snap"
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
-	midtransPkg "github.com/ridwanafazn/smile-fest-api/pkg/midtrans"
-	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
-	"gorm.io/gorm"
+	"github.com/ridwanafazn/smile-fest-api/pkg/cloudinary"
 )
 
 type Attendee struct {
@@ -27,24 +24,25 @@ type CheckoutInput struct {
 	CustomerEmail string `json:"customer_email" binding:"required,email"`
 	CustomerPhone string `json:"customer_phone" binding:"required"`
 
-	SurveyAge        string `json:"survey_age"`
-	SurveyCity       string `json:"survey_city"`
-	SurveyEducation  string `json:"survey_education"`
-	SurveyJob        string `json:"survey_job"`
-	SurveyMotivation string `json:"survey_motivation"`
-	SurveyAction     string `json:"survey_action"`
+	// Menggantikan field survei dengan Profile
+	ProfileAge        string `json:"profile_age"`
+	ProfileCity       string `json:"profile_city"`
+	ProfileEducation  string `json:"profile_education"`
+	ProfileJob        string `json:"profile_job"`
+	ProfileMotivation string `json:"profile_motivation"`
+	ContributionRole  string `json:"contribution_role"`
 
 	VoucherCode string     `json:"voucher_code"`
 	Attendees   []Attendee `json:"attendees" binding:"required,min=1"`
 }
 
 // Checkout godoc
-// @Summary      Create Transaction Checkout
-// @Description  Membuat transaksi dan mendapatkan Snap Token dari Midtrans
+// @Summary      Create Transaction Checkout (Manual Transfer)
+// @Description  Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi tiket selama 24 jam.
 // @Tags         public
 // @Accept       json
 // @Produce      json
-// @Param        input  body      CheckoutInput  true  "Data Pembeli, Survei, dan Daftar Pemegang Tiket"
+// @Param        input  body      CheckoutInput  true  "Data Pembeli dan Daftar Pemegang Tiket"
 // @Success      200    {object}  map[string]interface{}
 // @Router       /api/checkout [post]
 func Checkout(c *gin.Context) {
@@ -67,11 +65,28 @@ func Checkout(c *gin.Context) {
 	}
 
 	qty := len(input.Attendees)
-	basePrice := ticketVariant.Price * float64(qty)
 
+	// --- LOGIKA AUTO-BATCHING (600 KUOTA TOTAL) ---
+	var currentActiveTickets int64
+	config.DB.Model(&model.Ticket{}).
+		Joins("JOIN transactions ON transactions.id = tickets.transaction_id").
+		Where("transactions.status IN ?", []string{"pending", "waiting_verification", "settlement"}).
+		Count(&currentActiveTickets)
+
+	if currentActiveTickets+int64(qty) > 600 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Mohon maaf, kuota total tiket sudah habis."})
+		return
+	}
+
+	sessionBatch := 1
+	if currentActiveTickets >= 300 {
+		sessionBatch = 2
+	}
+
+	// Perhitungan Harga & Diskon
+	basePrice := ticketVariant.Price * float64(qty)
 	var voucherID *uint
 	discount := float64(0)
-	discountPerItem := float64(0)
 
 	if input.VoucherCode != "" {
 		var voucher model.Voucher
@@ -80,15 +95,11 @@ func Checkout(c *gin.Context) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher sedang tidak aktif"})
 				return
 			}
-
 			if (voucher.Quota - voucher.UsageCount) < qty {
 				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Sisa kuota voucher tidak cukup untuk %d tiket", qty)})
 				return
 			}
-
-			// Simpan nilai per item untuk invoice Midtrans nanti
-			discountPerItem = voucher.DiscountAmount
-			discount = discountPerItem * float64(qty)
+			discount = voucher.DiscountAmount * float64(qty)
 			voucherID = &voucher.ID
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher tidak valid"})
@@ -96,27 +107,37 @@ func Checkout(c *gin.Context) {
 		}
 	}
 
+	// --- LOGIKA KODE UNIK (100 - 999) ---
+	rand.Seed(time.Now().UnixNano())
+	uniqueCode := rand.Intn(900) + 100
+
 	finalPrice := basePrice - discount
 	if finalPrice < 0 {
 		finalPrice = 0
 	}
+	// Tambahkan kode unik ke total harga yang harus ditransfer
+	totalTransfer := finalPrice + float64(uniqueCode)
 
 	orderID := fmt.Sprintf("SMILE-%d", time.Now().Unix())
+	expiresAt := time.Now().Add(24 * time.Hour)
 
 	transaction := model.Transaction{
-		ID:               orderID,
-		CustomerName:     input.CustomerName,
-		CustomerEmail:    input.CustomerEmail,
-		CustomerPhone:    input.CustomerPhone,
-		SurveyAge:        input.SurveyAge,
-		SurveyCity:       input.SurveyCity,
-		SurveyEducation:  input.SurveyEducation,
-		SurveyJob:        input.SurveyJob,
-		SurveyMotivation: input.SurveyMotivation,
-		SurveyAction:     input.SurveyAction,
-		TotalAmount:      finalPrice,
-		Status:           "pending",
-		VoucherID:        voucherID,
+		ID:                orderID,
+		CustomerName:      input.CustomerName,
+		CustomerEmail:     input.CustomerEmail,
+		CustomerPhone:     input.CustomerPhone,
+		ProfileAge:        input.ProfileAge,
+		ProfileCity:       input.ProfileCity,
+		ProfileEducation:  input.ProfileEducation,
+		ProfileJob:        input.ProfileJob,
+		ProfileMotivation: input.ProfileMotivation,
+		ContributionRole:  input.ContributionRole,
+		TotalAmount:       totalTransfer,
+		UniqueCode:        uniqueCode,
+		SessionBatch:      sessionBatch,
+		ExpiresAt:         expiresAt,
+		Status:            "pending",
+		VoucherID:         voucherID,
 	}
 
 	if err := config.DB.Create(&transaction).Error; err != nil {
@@ -134,82 +155,28 @@ func Checkout(c *gin.Context) {
 	}
 	config.DB.Create(&tickets)
 
-	req := &snap.Request{
-		TransactionDetails: midtrans.TransactionDetails{
-			OrderID:  orderID,
-			GrossAmt: int64(finalPrice),
-		},
-		CustomerDetail: &midtrans.CustomerDetails{
-			FName: input.CustomerName,
-			Email: input.CustomerEmail,
-			Phone: input.CustomerPhone,
-		},
-		Items: &[]midtrans.ItemDetails{
-			{
-				ID:    input.TicketType,
-				Price: int64(ticketVariant.Price),
-				Qty:   int32(qty),
-				Name:  ticketVariant.Name,
-			},
-		},
-	}
-
-	if discount > 0 {
-		items := append(*req.Items, midtrans.ItemDetails{
-			ID:    "DISCOUNT",
-			Price: -int64(discountPerItem),
-			Qty:   int32(qty),
-			Name:  "Diskon Voucher",
-		})
-		req.Items = &items
-	}
-
-	snapResp, err := midtransPkg.SnapClient.CreateTransaction(req)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghubungi Midtrans"})
-		return
-	}
-
-	config.DB.Model(&transaction).Update("snap_token", snapResp.Token)
-
 	c.JSON(http.StatusOK, gin.H{
-		"message":    "Transaksi berhasil dibuat",
-		"order_id":   orderID,
-		"snap_token": snapResp.Token,
+		"message":       "Transaksi berhasil dibuat",
+		"order_id":      orderID,
+		"total_amount":  totalTransfer,
+		"unique_code":   uniqueCode,
+		"session_batch": sessionBatch,
+		"expires_at":    expiresAt,
 	})
 }
 
-// MidtransWebhook godoc
-// @Summary      Midtrans Payment Webhook
-// @Description  Menerima notifikasi status pembayaran dari server Midtrans
-// @Tags         webhook
-// @Accept       json
+// UploadProof godoc
+// @Summary      Upload Payment Proof
+// @Description  Mengunggah gambar bukti transfer untuk transaksi tertentu
+// @Tags         public
+// @Accept       multipart/form-data
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}
-// @Router       /api/webhook/midtrans [post]
-func MidtransWebhook(c *gin.Context) {
-	var notificationPayload map[string]interface{}
-
-	if err := c.ShouldBindJSON(&notificationPayload); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-
-	orderID, exists := notificationPayload["order_id"].(string)
-	if !exists {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid payload"})
-		return
-	}
-
-	statusCode, _ := notificationPayload["status_code"].(string)
-	grossAmount, _ := notificationPayload["gross_amount"].(string)
-	signatureKey, _ := notificationPayload["signature_key"].(string)
-	transactionStatus, _ := notificationPayload["transaction_status"].(string)
-
-	if !midtransPkg.VerifySignatureKey(orderID, statusCode, grossAmount, signatureKey) {
-		c.JSON(http.StatusForbidden, gin.H{"error": "Invalid signature key"})
-		return
-	}
+// @Param        id    path      string  true  "Order ID"
+// @Param        file  formData  file    true  "File Gambar Bukti Transfer (Max 2MB)"
+// @Success      200   {object}  map[string]interface{}
+// @Router       /api/transactions/{id}/upload-proof [post]
+func UploadProof(c *gin.Context) {
+	orderID := c.Param("id")
 
 	var transaction model.Transaction
 	if err := config.DB.Where("id = ?", orderID).First(&transaction).Error; err != nil {
@@ -217,46 +184,45 @@ func MidtransWebhook(c *gin.Context) {
 		return
 	}
 
-	if transaction.Status == "settlement" {
-		c.JSON(http.StatusOK, gin.H{"status": "ok, already processed"})
+	if transaction.Status != "pending" && transaction.Status != "waiting_verification" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "Transaksi tidak dapat diunggah ulang (status: " + transaction.Status + ")"})
 		return
 	}
 
-	if transactionStatus == "settlement" || transactionStatus == "capture" {
-		transaction.Status = "settlement"
-
-		if transaction.VoucherID != nil {
-			var qty int64
-			config.DB.Model(&model.Ticket{}).Where("transaction_id = ?", transaction.ID).Count(&qty)
-			if qty > 0 {
-				config.DB.Model(&model.Voucher{}).Where("id = ?", transaction.VoucherID).UpdateColumn("usage_count", gorm.Expr("usage_count + ?", qty))
-			}
-		}
-
-		// PERBAIKAN: Menangkap dan mencetak error pengiriman email ke Log
-		go func() {
-			emailData := utils.EmailData{
-				CustomerName: transaction.CustomerName,
-				OrderID:      transaction.ID,
-				TicketLink:   fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s&transaction_status=settlement", transaction.ID, transaction.CustomerEmail),
-			}
-
-			err := utils.SendTicketEmail(transaction.CustomerEmail, emailData)
-			if err != nil {
-				log.Printf("❌ [EMAIL ERROR] Gagal mengirim tiket ke %s. Pesan Error: %v\n", transaction.CustomerEmail, err)
-			} else {
-				log.Printf("✅ [EMAIL SUCCESS] Tiket berhasil dikirim ke %s\n", transaction.CustomerEmail)
-			}
-		}()
-
-	} else if transactionStatus == "cancel" || transactionStatus == "expire" || transactionStatus == "deny" {
-		transaction.Status = transactionStatus
-	} else if transactionStatus == "pending" {
-		transaction.Status = "pending"
+	fileHeader, err := c.FormFile("file")
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "File bukti transfer tidak ditemukan dalam request"})
+		return
 	}
 
-	config.DB.Save(&transaction)
-	c.JSON(http.StatusOK, gin.H{"status": "ok"})
+	file, err := fileHeader.Open()
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membaca file"})
+		return
+	}
+	defer file.Close()
+
+	// Upload ke Cloudinary
+	imageURL, err := cloudinary.UploadImage(c.Request.Context(), file, orderID)
+	if err != nil {
+		log.Printf("❌ [CLOUDINARY ERROR] %v\n", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengunggah gambar ke server"})
+		return
+	}
+
+	transaction.PaymentProofURL = imageURL
+	transaction.Status = "waiting_verification"
+
+	if err := config.DB.Save(&transaction).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan URL gambar ke database"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message":           "Bukti pembayaran berhasil diunggah, menunggu verifikasi Admin",
+		"payment_proof_url": imageURL,
+		"status":            transaction.Status,
+	})
 }
 
 // --- KHUSUS ADMIN ---
@@ -273,6 +239,7 @@ func GetDashboardStats(c *gin.Context) {
 	var totalRevenue float64
 	var totalTickets int64
 	var scannedTickets int64
+	var waitingVerification int64
 
 	config.DB.Model(&model.Transaction{}).Where("status = ?", "settlement").Select("COALESCE(SUM(total_amount), 0)").Scan(&totalRevenue)
 
@@ -283,12 +250,16 @@ func GetDashboardStats(c *gin.Context) {
 
 	config.DB.Model(&model.Ticket{}).Where("is_scanned = ?", true).Count(&scannedTickets)
 
+	// Tambahan untuk memantau beban kerja Admin
+	config.DB.Model(&model.Transaction{}).Where("status = ?", "waiting_verification").Count(&waitingVerification)
+
 	c.JSON(http.StatusOK, gin.H{
 		"message": "Berhasil mengambil statistik dashboard",
 		"data": gin.H{
-			"total_revenue":   totalRevenue,
-			"total_tickets":   totalTickets,
-			"scanned_tickets": scannedTickets,
+			"total_revenue":        totalRevenue,
+			"total_tickets":        totalTickets,
+			"scanned_tickets":      scannedTickets,
+			"waiting_verification": waitingVerification,
 		},
 	})
 }

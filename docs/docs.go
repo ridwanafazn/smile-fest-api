@@ -92,7 +92,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Melihat daftar riwayat transaksi peserta. Bisa mencari berdasarkan nama atau email.",
+                "description": "Melihat daftar riwayat transaksi peserta.",
                 "produces": [
                     "application/json"
                 ],
@@ -106,6 +106,53 @@ const docTemplate = `{
                         "description": "Cari nama / email",
                         "name": "search",
                         "in": "query"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/transactions/{id}/verify": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin melakukan persetujuan (approve) atau penolakan (reject) terhadap bukti transfer peserta. Approve akan mengirimkan E-Ticket otomatis.",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Verify Manual Payment",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID (Transaction ID)",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Aksi Verifikasi (approve/reject)",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/internal_handler.VerifyPaymentInput"
+                        }
                     }
                 ],
                 "responses": {
@@ -399,7 +446,7 @@ const docTemplate = `{
         },
         "/api/checkout": {
             "post": {
-                "description": "Membuat transaksi dan mendapatkan Snap Token dari Midtrans",
+                "description": "Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi tiket selama 24 jam.",
                 "consumes": [
                     "application/json"
                 ],
@@ -409,7 +456,7 @@ const docTemplate = `{
                 "tags": [
                     "public"
                 ],
-                "summary": "Create Transaction Checkout",
+                "summary": "Create Transaction Checkout (Manual Transfer)",
                 "parameters": [
                     {
                         "description": "Data Pembeli dan Daftar Pemegang Tiket",
@@ -580,7 +627,7 @@ const docTemplate = `{
         },
         "/api/tickets/track": {
             "get": {
-                "description": "Peserta mencari tiket grup mereka jika lupa/tidak dapat email",
+                "description": "Peserta mencari tiket grup mereka jika lupa/tidak dapat email atau untuk melanjutkan pembayaran (Resume Payment)",
                 "produces": [
                     "application/json"
                 ],
@@ -601,6 +648,46 @@ const docTemplate = `{
                         "description": "Email Peserta",
                         "name": "email",
                         "in": "query",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    }
+                }
+            }
+        },
+        "/api/transactions/{id}/upload-proof": {
+            "post": {
+                "description": "Mengunggah gambar bukti transfer untuk transaksi tertentu",
+                "consumes": [
+                    "multipart/form-data"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "public"
+                ],
+                "summary": "Upload Payment Proof",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Order ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "type": "file",
+                        "description": "File Gambar Bukti Transfer (Max 2MB)",
+                        "name": "file",
+                        "in": "formData",
                         "required": true
                     }
                 ],
@@ -644,30 +731,6 @@ const docTemplate = `{
                     }
                 }
             }
-        },
-        "/api/webhook/midtrans": {
-            "post": {
-                "description": "Menerima notifikasi status pembayaran dari server Midtrans",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "webhook"
-                ],
-                "summary": "Midtrans Payment Webhook",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
         }
     },
     "definitions": {
@@ -693,12 +756,14 @@ const docTemplate = `{
             ],
             "properties": {
                 "attendees": {
-                    "description": "Menampung nama-nama anggota grup",
                     "type": "array",
                     "minItems": 1,
                     "items": {
                         "$ref": "#/definitions/internal_handler.Attendee"
                     }
+                },
+                "contribution_role": {
+                    "type": "string"
                 },
                 "customer_email": {
                     "type": "string"
@@ -707,6 +772,22 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "customer_phone": {
+                    "type": "string"
+                },
+                "profile_age": {
+                    "description": "Menggantikan field survei dengan Profile",
+                    "type": "string"
+                },
+                "profile_city": {
+                    "type": "string"
+                },
+                "profile_education": {
+                    "type": "string"
+                },
+                "profile_job": {
+                    "type": "string"
+                },
+                "profile_motivation": {
                     "type": "string"
                 },
                 "ticket_type": {
@@ -783,6 +864,21 @@ const docTemplate = `{
                 },
                 "quota": {
                     "type": "integer"
+                }
+            }
+        },
+        "internal_handler.VerifyPaymentInput": {
+            "type": "object",
+            "required": [
+                "action"
+            ],
+            "properties": {
+                "action": {
+                    "type": "string",
+                    "enum": [
+                        "approve",
+                        "reject"
+                    ]
                 }
             }
         }

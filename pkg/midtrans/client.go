@@ -3,6 +3,7 @@ package midtrans
 import (
 	"crypto/sha512"
 	"encoding/hex"
+	"log"
 	"os"
 
 	"github.com/midtrans/midtrans-go"
@@ -12,9 +13,16 @@ import (
 var SnapClient snap.Client
 
 // InitMidtrans dipanggil saat server pertama kali menyala (bisa ditaruh di main.go nanti)
+// CATATAN: Pada branch ini (Manual Payment), fungsi Midtrans dipertahankan
+// hanya sebagai Legacy/Cadangan jika ingin rollback.
 func InitMidtrans() {
 	serverKey := os.Getenv("MIDTRANS_SERVER_KEY")
 	isProd := os.Getenv("MIDTRANS_IS_PROD")
+
+	if serverKey == "" {
+		log.Println("⚠️ [MIDTRANS] Server Key kosong. Berjalan dalam mode Manual Payment System.")
+		return
+	}
 
 	env := midtrans.Sandbox
 	if isProd == "true" {
@@ -27,6 +35,7 @@ func InitMidtrans() {
 
 	// Setup Snap Client
 	SnapClient.New(serverKey, env)
+	log.Println("⚠️ [MIDTRANS] Snap Client diinisialisasi (Legacy Mode standby).")
 }
 
 // VerifySignatureKey memverifikasi keaslian webhook dari Midtrans

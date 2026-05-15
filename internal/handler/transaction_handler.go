@@ -20,18 +20,25 @@ type Attendee struct {
 }
 
 type CheckoutInput struct {
-	TicketType    string `json:"ticket_type" binding:"required"`
-	CustomerName  string `json:"customer_name" binding:"required"`
-	CustomerEmail string `json:"customer_email" binding:"required,email"`
-	CustomerPhone string `json:"customer_phone" binding:"required"`
+	TicketType     string `json:"ticket_type" binding:"required"`
+	CustomerName   string `json:"customer_name" binding:"required"`
+	CustomerEmail  string `json:"customer_email" binding:"required,email"`
+	CustomerPhone  string `json:"customer_phone" binding:"required"`
+	CustomerGender string `json:"customer_gender" binding:"required"` // Ikhwan / Akhwat
 
-	// Menggantikan field survei dengan Profile
-	ProfileAge        string `json:"profile_age"`
-	ProfileCity       string `json:"profile_city"`
-	ProfileEducation  string `json:"profile_education"`
-	ProfileJob        string `json:"profile_job"`
-	ProfileMotivation string `json:"profile_motivation"`
-	ContributionRole  string `json:"contribution_role"`
+	// Data Profil
+	ProfileAge           string `json:"profile_age"`
+	ProfileCity          string `json:"profile_city"`
+	ProfileEducation     string `json:"profile_education"`
+	ProfileJob           string `json:"profile_job"`
+	CommunityAffiliation string `json:"community_affiliation"` // Komunitas/Instansi
+	InformationSource    string `json:"information_source"`    // Tahu acara dari mana
+
+	// Kuesioner (Multiple Choice - Array of Strings)
+	InterestReasons     []string `json:"interest_reasons"`
+	SustainabilitySteps []string `json:"sustainability_steps"`
+
+	ContributionRole string `json:"contribution_role"`
 
 	VoucherCode string     `json:"voucher_code"`
 	Attendees   []Attendee `json:"attendees" binding:"required,min=1"`
@@ -122,23 +129,31 @@ func Checkout(c *gin.Context) {
 	orderID := fmt.Sprintf("SMILE-%d", time.Now().Unix())
 	expiresAt := time.Now().Add(24 * time.Hour)
 
+	// Menggabungkan array string menjadi string utuh dipisah koma untuk database
+	interestStr := strings.Join(input.InterestReasons, ", ")
+	stepsStr := strings.Join(input.SustainabilitySteps, ", ")
+
 	transaction := model.Transaction{
-		ID:                orderID,
-		CustomerName:      input.CustomerName,
-		CustomerEmail:     input.CustomerEmail,
-		CustomerPhone:     input.CustomerPhone,
-		ProfileAge:        input.ProfileAge,
-		ProfileCity:       input.ProfileCity,
-		ProfileEducation:  input.ProfileEducation,
-		ProfileJob:        input.ProfileJob,
-		ProfileMotivation: input.ProfileMotivation,
-		ContributionRole:  input.ContributionRole,
-		TotalAmount:       totalTransfer,
-		UniqueCode:        uniqueCode,
-		SessionBatch:      sessionBatch,
-		ExpiresAt:         expiresAt,
-		Status:            "pending",
-		VoucherID:         voucherID,
+		ID:                   orderID,
+		CustomerName:         input.CustomerName,
+		CustomerEmail:        input.CustomerEmail,
+		CustomerPhone:        input.CustomerPhone,
+		CustomerGender:       input.CustomerGender,
+		ProfileAge:           input.ProfileAge,
+		ProfileCity:          input.ProfileCity,
+		ProfileEducation:     input.ProfileEducation,
+		ProfileJob:           input.ProfileJob,
+		CommunityAffiliation: input.CommunityAffiliation,
+		InformationSource:    input.InformationSource,
+		InterestReasons:      interestStr,
+		SustainabilitySteps:  stepsStr,
+		ContributionRole:     input.ContributionRole,
+		TotalAmount:          totalTransfer,
+		UniqueCode:           uniqueCode,
+		SessionBatch:         sessionBatch,
+		ExpiresAt:            expiresAt,
+		Status:               "pending",
+		VoucherID:            voucherID,
 	}
 
 	if err := config.DB.Create(&transaction).Error; err != nil {
@@ -157,13 +172,9 @@ func Checkout(c *gin.Context) {
 	config.DB.Create(&tickets)
 
 	// --- LOGIKA "MAGIC LINK" EMAIL (ASYNCHRONOUS) ---
-	// Menyusun format nominal presisi untuk diselipkan ke email
 	formattedAmount := fmt.Sprintf("Rp %s", utils.FormatRupiah(totalTransfer))
-
-	// Konstruksi Magic Link yang jika diklik akan langsung memuat data user di TrackTicketPage
 	trackLink := fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", orderID, input.CustomerEmail)
 
-	// Jalankan di Goroutine (background process) agar tidak menahan response ke Frontend
 	go func() {
 		err := utils.SendInstructionEmail(input.CustomerEmail, utils.InstructionData{
 			CustomerName: input.CustomerName,

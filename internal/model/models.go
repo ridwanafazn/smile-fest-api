@@ -28,17 +28,23 @@ type Voucher struct {
 }
 
 type Transaction struct {
-	ID            string `gorm:"primaryKey" json:"id"`
-	CustomerName  string `gorm:"not null" json:"customer_name"`
-	CustomerEmail string `gorm:"not null" json:"customer_email"`
-	CustomerPhone string `gorm:"not null" json:"customer_phone"`
+	ID             string `gorm:"primaryKey" json:"id"`
+	CustomerName   string `gorm:"not null" json:"customer_name"`
+	CustomerEmail  string `gorm:"not null" json:"customer_email"`
+	CustomerPhone  string `gorm:"not null" json:"customer_phone"`
+	CustomerGender string `gorm:"not null" json:"customer_gender"`
 
-	// --- DATA PEMESAN UTAMA (MENGGANTIKAN LABEL SURVEI) ---
-	ProfileAge        string `json:"profile_age"`
-	ProfileCity       string `json:"profile_city"`
-	ProfileEducation  string `json:"profile_education"`
-	ProfileJob        string `json:"profile_job"`
-	ProfileMotivation string `json:"profile_motivation"`
+	// --- DATA PROFIL PEMESAN ---
+	ProfileAge           string `json:"profile_age"`
+	ProfileCity          string `json:"profile_city"`
+	ProfileEducation     string `json:"profile_education"`
+	ProfileJob           string `json:"profile_job"`
+	CommunityAffiliation string `json:"community_affiliation"`
+	InformationSource    string `json:"information_source"`
+
+	// --- KUESIONER PILIHAN GANDA (Disimpan sebagai string berbatas koma) ---
+	InterestReasons     string `json:"interest_reasons"`
+	SustainabilitySteps string `json:"sustainability_steps"`
 
 	// --- UNDANGAN KONTRIBUSI ---
 	ContributionRole string `json:"contribution_role"` // Donatur, Relawan, Update Info, Peserta Saja

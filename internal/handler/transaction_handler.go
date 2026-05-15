@@ -2,6 +2,7 @@ package handler
 
 import (
 	"fmt"
+	"log" // PERBAIKAN: Menambahkan modul log untuk mencetak pesan ke terminal/Railway
 	"net/http"
 	"strings"
 	"time"
@@ -70,7 +71,7 @@ func Checkout(c *gin.Context) {
 
 	var voucherID *uint
 	discount := float64(0)
-	discountPerItem := float64(0) // PERBAIKAN: Variabel di-declare di luar scope IF
+	discountPerItem := float64(0)
 
 	if input.VoucherCode != "" {
 		var voucher model.Voucher
@@ -156,7 +157,7 @@ func Checkout(c *gin.Context) {
 	if discount > 0 {
 		items := append(*req.Items, midtrans.ItemDetails{
 			ID:    "DISCOUNT",
-			Price: -int64(discountPerItem), // PERBAIKAN: Menggunakan variabel yang ada di scope fungsi
+			Price: -int64(discountPerItem),
 			Qty:   int32(qty),
 			Name:  "Diskon Voucher",
 		})
@@ -232,13 +233,20 @@ func MidtransWebhook(c *gin.Context) {
 			}
 		}
 
+		// PERBAIKAN: Menangkap dan mencetak error pengiriman email ke Log
 		go func() {
 			emailData := utils.EmailData{
 				CustomerName: transaction.CustomerName,
 				OrderID:      transaction.ID,
 				TicketLink:   fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s&transaction_status=settlement", transaction.ID, transaction.CustomerEmail),
 			}
-			_ = utils.SendTicketEmail(transaction.CustomerEmail, emailData)
+
+			err := utils.SendTicketEmail(transaction.CustomerEmail, emailData)
+			if err != nil {
+				log.Printf("❌ [EMAIL ERROR] Gagal mengirim tiket ke %s. Pesan Error: %v\n", transaction.CustomerEmail, err)
+			} else {
+				log.Printf("✅ [EMAIL SUCCESS] Tiket berhasil dikirim ke %s\n", transaction.CustomerEmail)
+			}
 		}()
 
 	} else if transactionStatus == "cancel" || transactionStatus == "expire" || transactionStatus == "deny" {

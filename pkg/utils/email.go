@@ -2,75 +2,55 @@ package utils
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
-	"html/template"
-	"net/smtp"
+	"net/http"
 	"os"
 )
 
-// EmailData berisi variabel yang akan dilempar ke template HTML
+// EmailData berisi variabel yang akan dikirim ke Google Apps Script
 type EmailData struct {
 	CustomerName string
 	OrderID      string
 	TicketLink   string
 }
 
-// SendTicketEmail bertugas mengirimkan E-Ticket ke email pembeli
+// SendTicketEmail bertugas mengirimkan instruksi ke Google Apps Script via HTTP POST
 func SendTicketEmail(toEmail string, data EmailData) error {
-	smtpHost := os.Getenv("SMTP_HOST")           // cth: smtp.gmail.com
-	smtpPort := os.Getenv("SMTP_PORT")           // cth: 587
-	senderEmail := os.Getenv("SMTP_EMAIL")       // Email panitia
-	senderPassword := os.Getenv("SMTP_PASSWORD") // App Password
+	// Memanggil URL Web App dari Google Apps Script yang sudah di-deploy
+	gasURL := os.Getenv("GAS_URL")
 
 	// Bypass jika config kosong (berguna saat mode development lokal)
-	if smtpHost == "" || senderEmail == "" {
-		fmt.Println("⚠️ SMTP Config kosong, bypass pengiriman email ke:", toEmail)
+	if gasURL == "" {
+		fmt.Println("⚠️ GAS_URL kosong, bypass pengiriman email ke:", toEmail)
 		return nil
 	}
 
-	auth := smtp.PlainAuth("", senderEmail, senderPassword, smtpHost)
-
-	// Template HTML Email Responsif (Diperbarui copywrtiting-nya)
-	tmpl := `
-	<!DOCTYPE html>
-	<html>
-	<body style="font-family: sans-serif; line-height: 1.6; color: #333;">
-		<div style="max-w-md; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px;">
-			<h2 style="color: #292524;">Halo, {{.CustomerName}}!</h2>
-			<p>Terima kasih telah mengamankan tiket <strong>SMILE FEST 2026</strong>.</p>
-			<p>Pembayaran Anda untuk Order ID <strong>{{.OrderID}}</strong> telah kami terima (LUNAS).</p>
-			<p>Klik tombol di bawah ini untuk melihat status pesanan Anda. <strong>PENTING:</strong> Anda harus melengkapi kuesioner singkat di halaman pelacakan sebelum sistem menerbitkan QR Code Anda.</p>
-			<div style="text-align: center; margin: 30px 0;">
-				<a href="{{.TicketLink}}" style="background-color: #292524; color: #ffffff; padding: 12px 24px; text-decoration: none; border-radius: 8px; font-weight: bold;">Buka E-Ticket Saya</a>
-			</div>
-			<hr style="border: none; border-top: 1px solid #eee;" />
-			<p style="font-size: 12px; color: #888;">Sampai jumpa di venue!<br/>Salam hangat,<br/>Tim SMILE FEST</p>
-		</div>
-	</body>
-	</html>
-	`
-
-	t, err := template.New("email").Parse(tmpl)
-	if err != nil {
-		return err
+	// Bungkus data menjadi JSON sesuai format yang ditangkap oleh fungsi doPost di GAS
+	payload := map[string]string{
+		"to":           toEmail,
+		"subject":      fmt.Sprintf("E-Ticket SMILE FEST 2026 - %s", data.OrderID),
+		"customerName": data.CustomerName,
+		"orderId":      data.OrderID,
+		"ticketLink":   data.TicketLink,
 	}
 
-	var body bytes.Buffer
-	body.Write([]byte(fmt.Sprintf("To: %s\r\n", toEmail)))
-	body.Write([]byte(fmt.Sprintf("Subject: E-Ticket SMILE FEST 2026 - %s\r\n", data.OrderID)))
-	body.Write([]byte("MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"))
-
-	err = t.Execute(&body, data)
+	jsonPayload, err := json.Marshal(payload)
 	if err != nil {
-		return err
+		return fmt.Errorf("gagal membungkus payload JSON: %v", err)
 	}
 
-	addr := fmt.Sprintf("%s:%s", smtpHost, smtpPort)
-	err = smtp.SendMail(addr, auth, senderEmail, []string{toEmail}, body.Bytes())
+	// Tembak URL Google Script via HTTP POST (Jalur Port 443 HTTPS - Dijamin lolos firewall Railway)
+	resp, err := http.Post(gasURL, "application/json", bytes.NewBuffer(jsonPayload))
 	if err != nil {
-		return err
+		return fmt.Errorf("gagal menghubungi Bridge Email (GAS): %v", err)
+	}
+	defer resp.Body.Close()
+
+	// GAS biasanya merespon dengan 200 OK, tapi kadang 302 Found (Redirect) untuk script. Keduanya aman.
+	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusFound {
+		return fmt.Errorf("bridge email merespon dengan status HTTP tidak wajar: %d", resp.StatusCode)
 	}
 
-	fmt.Println("✅ Email tiket berhasil dikirim ke:", toEmail)
 	return nil
 }

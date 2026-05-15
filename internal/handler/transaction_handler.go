@@ -20,14 +20,12 @@ type Attendee struct {
 	Name string `json:"name" binding:"required"`
 }
 
-// CheckoutInput diperbarui untuk menangkap data survei
 type CheckoutInput struct {
 	TicketType    string `json:"ticket_type" binding:"required"`
 	CustomerName  string `json:"customer_name" binding:"required"`
 	CustomerEmail string `json:"customer_email" binding:"required,email"`
 	CustomerPhone string `json:"customer_phone" binding:"required"`
 
-	// Field Survei
 	SurveyAge        string `json:"survey_age"`
 	SurveyCity       string `json:"survey_city"`
 	SurveyEducation  string `json:"survey_education"`
@@ -72,6 +70,7 @@ func Checkout(c *gin.Context) {
 
 	var voucherID *uint
 	discount := float64(0)
+	discountPerItem := float64(0) // PERBAIKAN: Variabel di-declare di luar scope IF
 
 	if input.VoucherCode != "" {
 		var voucher model.Voucher
@@ -81,14 +80,14 @@ func Checkout(c *gin.Context) {
 				return
 			}
 
-			// ATURAN EMAS: Cek apakah sisa kuota cukup untuk SELURUH tiket yang dibeli
 			if (voucher.Quota - voucher.UsageCount) < qty {
 				c.JSON(http.StatusBadRequest, gin.H{"error": fmt.Sprintf("Sisa kuota voucher tidak cukup untuk %d tiket", qty)})
 				return
 			}
 
-			// LOGIKA MULTIPLIER: Diskon dikalikan jumlah tiket
-			discount = voucher.DiscountAmount * float64(qty)
+			// Simpan nilai per item untuk invoice Midtrans nanti
+			discountPerItem = voucher.DiscountAmount
+			discount = discountPerItem * float64(qty)
 			voucherID = &voucher.ID
 		} else {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher tidak valid"})
@@ -157,7 +156,7 @@ func Checkout(c *gin.Context) {
 	if discount > 0 {
 		items := append(*req.Items, midtrans.ItemDetails{
 			ID:    "DISCOUNT",
-			Price: -int64(voucher.DiscountAmount), // Menampilkan harga diskon per item di invoice Midtrans
+			Price: -int64(discountPerItem), // PERBAIKAN: Menggunakan variabel yang ada di scope fungsi
 			Qty:   int32(qty),
 			Name:  "Diskon Voucher",
 		})
@@ -225,7 +224,6 @@ func MidtransWebhook(c *gin.Context) {
 	if transactionStatus == "settlement" || transactionStatus == "capture" {
 		transaction.Status = "settlement"
 
-		// LOGIKA MULTIPLIER: Usage count voucher harus ditambah berdasarkan jumlah tiket, bukan cuma 1
 		if transaction.VoucherID != nil {
 			var qty int64
 			config.DB.Model(&model.Ticket{}).Where("transaction_id = ?", transaction.ID).Count(&qty)

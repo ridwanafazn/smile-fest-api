@@ -35,8 +35,8 @@ func GetTicketInfo(c *gin.Context) {
 }
 
 // TrackTicket godoc
-// @Summary      Track E-Ticket
-// @Description  Peserta mencari tiket grup mereka jika lupa/tidak dapat email atau untuk melanjutkan pembayaran (Resume Payment)
+// @Summary      Track E-Ticket & Payment Status
+// @Description  Peserta mencari tiket mereka, mengecek status verifikasi admin, atau melihat instruksi pembayaran manual (jika status masih pending).
 // @Tags         public
 // @Produce      json
 // @Param        order_id  query     string  true  "Order ID (SMILE-xxx)"
@@ -53,39 +53,18 @@ func TrackTicket(c *gin.Context) {
 	}
 
 	var transaction model.Transaction
+	// Gunakan Preload("Tickets") agar data array pemegang tiket ikut terbawa
 	if err := config.DB.Preload("Tickets").Where("id = ? AND customer_email = ?", orderID, email).First(&transaction).Error; err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "Data tidak ditemukan. Pastikan Order ID dan Email benar."})
 		return
 	}
 
-	// TAHAP 1 (Poin 4): Menyelamatkan "Abandoned Cart". Jika pending, kirim snap_token agar frontend bisa merender ulang popup bayar.
-	if transaction.Status != "settlement" {
-		c.JSON(http.StatusOK, gin.H{
-			"message": "Status transaksi ditemukan",
-			"data": gin.H{
-				"order_id":      transaction.ID,
-				"customer_name": transaction.CustomerName,
-				"status":        transaction.Status,
-				"snap_token":    transaction.SnapToken,
-			},
-		})
-		return
-	}
-
-	firstTicketUUID := ""
-	if len(transaction.Tickets) > 0 {
-		firstTicketUUID = transaction.Tickets[0].ID.String()
-	}
-
+	// Mengembalikan seluruh objek transaksi ke Frontend.
+	// Golang akan otomatis mengubah field struct (TotalAmount, SessionBatch, dll)
+	// menjadi JSON keys (total_amount, session_batch, dll) sesuai tag json:"..." di model.
 	c.JSON(http.StatusOK, gin.H{
-		"message": "Tiket berhasil ditemukan",
-		"data": gin.H{
-			"order_id":      transaction.ID,
-			"customer_name": transaction.CustomerName,
-			"ticket_uuid":   firstTicketUUID,
-			"tickets":       transaction.Tickets,
-			"status":        transaction.Status,
-		},
+		"message": "Detail transaksi berhasil ditemukan",
+		"data":    transaction,
 	})
 }
 

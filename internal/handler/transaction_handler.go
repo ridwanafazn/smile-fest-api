@@ -116,7 +116,6 @@ func Checkout(c *gin.Context) {
 	}
 
 	// --- LOGIKA KODE UNIK (100 - 999) ---
-	rand.Seed(time.Now().UnixNano())
 	uniqueCode := rand.Intn(900) + 100
 
 	finalPrice := basePrice - discount

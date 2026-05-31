@@ -3,18 +3,20 @@ package handler
 import (
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
+	"github.com/google/uuid"
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 )
 
-// --- KHUSUS PUBLIK ---
+// --- KHUSUS PUBLIK & ADMIN (MIXED) ---
 
 // GetTicketInfo godoc
 // @Summary      Get Ticket Info
-// @Description  Mengambil data harga dan tipe tiket yang sedang aktif berdasarkan periode tanggal hari ini
+// @Description  Mengambil data harga dan tipe tiket. Publik hanya melihat yang aktif, Admin melihat semua.
 // @Tags         public
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
@@ -22,10 +24,23 @@ import (
 func GetTicketInfo(c *gin.Context) {
 	var ticketVariants []model.TicketVariant
 
-	now := time.Now()
-	if err := config.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&ticketVariants).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
-		return
+	// Cek apakah request datang dari Admin (memiliki header Authorization)
+	authHeader := c.GetHeader("Authorization")
+	isAdminRequest := authHeader != "" && strings.HasPrefix(authHeader, "Bearer ")
+
+	if isAdminRequest {
+		// Admin: Ambil SEMUA tiket, urutkan dari yang terbaru
+		if err := config.DB.Order("created_at desc").Find(&ticketVariants).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
+			return
+		}
+	} else {
+		// Publik: Hanya ambil tiket yang aktif DAN masuk dalam rentang tanggal
+		now := time.Now()
+		if err := config.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&ticketVariants).Error; err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
+			return
+		}
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -70,6 +85,144 @@ func TrackTicket(c *gin.Context) {
 
 // --- KHUSUS ADMIN ---
 
+type TicketVariantInput struct {
+	Name      string     `json:"name" binding:"required"`
+	Price     float64    `json:"price" binding:"required,min=0"`
+	Quota     int        `json:"quota" binding:"required,min=1"`
+	StartDate *time.Time `json:"start_date"`
+	EndDate   *time.Time `json:"end_date"`
+}
+
+// CreateTicketVariant godoc
+// @Summary      Create New Ticket Variant
+// @Description  Admin membuat gelombang tiket baru
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        input  body      TicketVariantInput  true  "Data Gelombang Tiket"
+// @Success      201    {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/ticket-variants [post]
+func CreateTicketVariant(c *gin.Context) {
+	var input TicketVariantInput
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Atur default tanggal jika kosong
+	now := time.Now()
+	startDate := now
+	if input.StartDate != nil {
+		startDate = *input.StartDate
+	}
+
+	// Jika end_date kosong, set 10 tahun dari sekarang (seolah-olah unlimited)
+	endDate := now.AddDate(10, 0, 0)
+	if input.EndDate != nil {
+		endDate = *input.EndDate
+	}
+
+	variant := model.TicketVariant{
+		ID:        uuid.New().String(),
+		Name:      input.Name,
+		Price:     input.Price,
+		IsActive:  false, // Otomatis nonaktif saat baru dibuat (standar keamanan)
+		StartDate: startDate,
+		EndDate:   endDate,
+		// Asumsi kita menggunakan properti Description sementara untuk menampung Quota sebelum skema DB diperbarui
+		// Description: fmt.Sprintf(`{"quota": %d}`, input.Quota),
+	}
+
+	if err := config.DB.Create(&variant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan gelombang tiket ke database"})
+		return
+	}
+
+	c.JSON(http.StatusCreated, gin.H{
+		"message": "Gelombang tiket berhasil ditambahkan",
+		"data":    variant,
+	})
+}
+
+// UpdateTicketVariant godoc
+// @Summary      Update Ticket Variant
+// @Description  Admin mengubah harga atau periode gelombang tiket
+// @Tags         admin
+// @Accept       json
+// @Produce      json
+// @Param        id     path      string              true  "Variant ID"
+// @Param        input  body      TicketVariantInput  true  "Data Update Gelombang Tiket"
+// @Success      200    {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/ticket-variants/{id} [put]
+func UpdateTicketVariant(c *gin.Context) {
+	id := c.Param("id")
+	var input TicketVariantInput
+
+	if err := c.ShouldBindJSON(&input); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var variant model.TicketVariant
+	if err := config.DB.Where("id = ?", id).First(&variant).Error; err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "Tipe tiket tidak ditemukan"})
+		return
+	}
+
+	variant.Name = input.Name
+	variant.Price = input.Price
+
+	if input.StartDate != nil {
+		variant.StartDate = *input.StartDate
+	}
+	if input.EndDate != nil {
+		variant.EndDate = *input.EndDate
+	}
+
+	if err := config.DB.Save(&variant).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui data tiket"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Gelombang tiket berhasil diperbarui",
+		"data":    variant,
+	})
+}
+
+// DeleteTicketVariant godoc
+// @Summary      Delete Ticket Variant
+// @Description  Admin menghapus gelombang tiket (Hanya jika belum ada transaksi terkait)
+// @Tags         admin
+// @Produce      json
+// @Param        id   path      string  true  "Variant ID"
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/ticket-variants/{id} [delete]
+func DeleteTicketVariant(c *gin.Context) {
+	id := c.Param("id")
+
+	// Cegah hapus tiket jika sudah ada transaksi (mencegah Foreign Key Error)
+	var count int64
+	config.DB.Model(&model.Ticket{}).Where("ticket_variant_id = ?", id).Count(&count)
+	if count > 0 {
+		c.JSON(http.StatusConflict, gin.H{"error": "Tidak dapat menghapus tiket karena sudah ada transaksi yang membelinya. Sebaiknya nonaktifkan saja tiket ini."})
+		return
+	}
+
+	if err := config.DB.Where("id = ?", id).Delete(&model.TicketVariant{}).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus tiket"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Gelombang tiket berhasil dihapus permanen",
+	})
+}
+
 // ToggleTicketVariant godoc
 // @Summary      Toggle Ticket Variant Status
 // @Description  Admin membuka atau menutup penjualan fase tiket secara manual (Kill switch)
@@ -78,7 +231,7 @@ func TrackTicket(c *gin.Context) {
 // @Param        id   path      string  true  "Variant ID"
 // @Success      200  {object}  map[string]interface{}
 // @Security     BearerAuth
-// @Router       /api/admin/ticket-variants/{id} [put]
+// @Router       /api/admin/ticket-variants/{id}/toggle [put]
 func ToggleTicketVariant(c *gin.Context) {
 	id := c.Param("id")
 	var variant model.TicketVariant

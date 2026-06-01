@@ -39,7 +39,7 @@ func SetupRouter() *gin.Engine {
 	r.POST("/api/seed-admin", handler.SeedAdmin)
 
 	// Info & Lacak Tiket
-	r.GET("/api/tickets/info", handler.GetTicketInfo)
+	r.GET("/api/tickets/info", handler.GetTicketInfo) // <--- Rute murni publik sekarang
 	r.GET("/api/tickets/track", handler.TrackTicket)
 
 	// Info Voucher
@@ -48,7 +48,7 @@ func SetupRouter() *gin.Engine {
 	// --- SISTEM PEMBAYARAN MANUAL ---
 	r.POST("/api/checkout", handler.Checkout)                         // Menghasilkan Kode Unik & Instruksi
 	r.POST("/api/transactions/:id/upload-proof", handler.UploadProof) // Upload Bukti Transfer ke Cloudinary
-	r.PUT("/api/transactions/:id/cancel", handler.CancelTransaction)  // [BARU] Pembatalan Transaksi User
+	r.PUT("/api/transactions/:id/cancel", handler.CancelTransaction)  // Pembatalan Transaksi User
 
 	// --- ROUTE ADMIN (Hanya token dengan role 'admin') ---
 	admin := r.Group("/api/admin")
@@ -73,7 +73,8 @@ func SetupRouter() *gin.Engine {
 		admin.DELETE("/vouchers/:id", handler.DeleteVoucher)
 		admin.PUT("/vouchers/:id/toggle", handler.ToggleVoucherStatus)
 
-		// [BARU] Kontrol Manajemen Tiket (Ticket Variants)
+		// Kontrol Manajemen Tiket (Ticket Variants)
+		admin.GET("/ticket-variants", handler.GetAdminTicketVariants)
 		admin.POST("/ticket-variants", handler.CreateTicketVariant)
 		admin.PUT("/ticket-variants/:id", handler.UpdateTicketVariant)
 		admin.DELETE("/ticket-variants/:id", handler.DeleteTicketVariant)

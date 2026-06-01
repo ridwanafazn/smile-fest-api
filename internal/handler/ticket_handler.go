@@ -3,7 +3,6 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"strings"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -12,11 +11,11 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 )
 
-// --- KHUSUS PUBLIK & ADMIN (MIXED) ---
+// --- KHUSUS PUBLIK ---
 
 // GetTicketInfo godoc
 // @Summary      Get Ticket Info
-// @Description  Mengambil data harga dan tipe tiket. Publik hanya melihat yang aktif, Admin melihat semua.
+// @Description  Mengambil data harga dan tipe tiket yang sedang aktif untuk publik.
 // @Tags         public
 // @Produce      json
 // @Success      200  {object}  map[string]interface{}
@@ -24,23 +23,11 @@ import (
 func GetTicketInfo(c *gin.Context) {
 	var ticketVariants []model.TicketVariant
 
-	// Cek apakah request datang dari Admin (memiliki header Authorization)
-	authHeader := c.GetHeader("Authorization")
-	isAdminRequest := authHeader != "" && strings.HasPrefix(authHeader, "Bearer ")
-
-	if isAdminRequest {
-		// Admin: Ambil SEMUA tiket, urutkan dari yang terbaru
-		if err := config.DB.Order("created_at desc").Find(&ticketVariants).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
-			return
-		}
-	} else {
-		// Publik: Hanya ambil tiket yang aktif DAN masuk dalam rentang tanggal
-		now := time.Now()
-		if err := config.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&ticketVariants).Error; err != nil {
-			c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
-			return
-		}
+	// Publik: Hanya ambil tiket yang aktif DAN masuk dalam rentang tanggal
+	now := time.Now()
+	if err := config.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&ticketVariants).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
+		return
 	}
 
 	c.JSON(http.StatusOK, gin.H{
@@ -84,6 +71,29 @@ func TrackTicket(c *gin.Context) {
 }
 
 // --- KHUSUS ADMIN ---
+
+// GetAdminTicketVariants godoc
+// @Summary      Get All Ticket Variants (Admin)
+// @Description  Mengambil seluruh data tipe tiket tanpa peduli status aktif atau periode tanggal.
+// @Tags         admin
+// @Produce      json
+// @Success      200  {object}  map[string]interface{}
+// @Security     BearerAuth
+// @Router       /api/admin/ticket-variants [get]
+func GetAdminTicketVariants(c *gin.Context) {
+	var ticketVariants []model.TicketVariant
+
+	// FIX SQL Error: Tidak pakai 'created_at', diganti 'id desc' karena tabel tidak punya kolom created_at
+	if err := config.DB.Order("id desc").Find(&ticketVariants).Error; err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil seluruh data tiket dari database"})
+		return
+	}
+
+	c.JSON(http.StatusOK, gin.H{
+		"message": "Berhasil mengambil seluruh data tiket (Admin)",
+		"data":    ticketVariants,
+	})
+}
 
 type TicketVariantInput struct {
 	Name      string     `json:"name" binding:"required"`

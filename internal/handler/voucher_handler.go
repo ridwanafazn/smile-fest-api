@@ -1,23 +1,20 @@
 package handler
 
 import (
+	"fmt"
 	"net/http"
-	"strings"
 
 	"github.com/gin-gonic/gin"
-	"github.com/ridwanafazn/smile-fest-api/internal/config"
-	"github.com/ridwanafazn/smile-fest-api/internal/model"
+	"github.com/ridwanafazn/smile-fest-api/internal/service"
+	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
 )
 
-type CreateVoucherInput struct {
-	Code           string  `json:"code" binding:"required"`
-	DiscountAmount float64 `json:"discount_amount" binding:"required"`
-	Quota          int     `json:"quota" binding:"required"`
+type VoucherHandler struct {
+	voucherService service.VoucherService
 }
 
-type UpdateVoucherInput struct {
-	DiscountAmount float64 `json:"discount_amount" binding:"required"`
-	Quota          int     `json:"quota" binding:"required"`
+func NewVoucherHandler(voucherService service.VoucherService) *VoucherHandler {
+	return &VoucherHandler{voucherService}
 }
 
 // CreateVoucher godoc
@@ -26,31 +23,25 @@ type UpdateVoucherInput struct {
 // @Tags         admin
 // @Accept       json
 // @Produce      json
-// @Param        input  body      CreateVoucherInput  true  "Data Voucher"
-// @Success      200    {object}  map[string]interface{}
+// @Param        input  body      service.CreateVoucherInput  true  "Data Voucher"
+// @Success      200    {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/vouchers [post]
-func CreateVoucher(c *gin.Context) {
-	var input CreateVoucherInput
+func (h *VoucherHandler) CreateVoucher(c *gin.Context) {
+	var input service.CreateVoucherInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ErrorResult(c, http.StatusBadRequest, "Data input tidak valid", err.Error())
 		return
 	}
 
-	voucher := model.Voucher{
-		Code:           strings.ToUpper(input.Code),
-		DiscountAmount: input.DiscountAmount,
-		Quota:          input.Quota,
-		IsActive:       true,
-	}
-
-	if err := config.DB.Create(&voucher).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal membuat voucher atau kode sudah ada"})
+	voucher, err := h.voucherService.CreateVoucher(input)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{"message": "Voucher berhasil dibuat", "data": voucher})
+	utils.SuccessResult(c, http.StatusOK, "Voucher berhasil dibuat", voucher)
 }
 
 // GetVouchers godoc
@@ -58,18 +49,17 @@ func CreateVoucher(c *gin.Context) {
 // @Description  Admin melihat daftar voucher dan sisa kuota
 // @Tags         admin
 // @Produce      json
-// @Success      200    {object}  map[string]interface{}
+// @Success      200    {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/vouchers [get]
-func GetVouchers(c *gin.Context) {
-	var vouchers []model.Voucher
-	config.DB.Order("created_at desc").Find(&vouchers)
+func (h *VoucherHandler) GetVouchers(c *gin.Context) {
+	vouchers, err := h.voucherService.GetAllVouchers()
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, "Gagal mengambil data voucher", err.Error())
+		return
+	}
 
-	// Pembungkusan JSON agar seragam (Unboxing ready)
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Berhasil mengambil data voucher",
-		"data":    vouchers,
-	})
+	utils.SuccessResult(c, http.StatusOK, "Berhasil mengambil data voucher", vouchers)
 }
 
 // ToggleVoucherStatus godoc
@@ -77,29 +67,20 @@ func GetVouchers(c *gin.Context) {
 // @Description  Admin mematikan (Kill Switch) atau menyalakan kembali voucher
 // @Tags         admin
 // @Produce      json
-// @Param        id   path      int  true  "Voucher ID"
-// @Success      200  {object}  map[string]interface{}
+// @Param        id   path      string  true  "Voucher ID"
+// @Success      200  {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/vouchers/{id}/toggle [put]
-func ToggleVoucherStatus(c *gin.Context) {
+func (h *VoucherHandler) ToggleVoucherStatus(c *gin.Context) {
 	id := c.Param("id")
-	var voucher model.Voucher
 
-	if err := config.DB.First(&voucher, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Voucher tidak ditemukan"})
+	voucher, statusStr, err := h.voucherService.ToggleVoucherStatus(id)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
 
-	voucher.IsActive = !voucher.IsActive
-	config.DB.Save(&voucher)
-
-	status := "dinonaktifkan"
-	if voucher.IsActive {
-		status = "diaktifkan"
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":   "Voucher berhasil " + status,
+	utils.SuccessResult(c, http.StatusOK, fmt.Sprintf("Voucher berhasil %s", statusStr), gin.H{
 		"is_active": voucher.IsActive,
 	})
 }
@@ -110,35 +91,27 @@ func ToggleVoucherStatus(c *gin.Context) {
 // @Tags         admin
 // @Accept       json
 // @Produce      json
-// @Param        id     path      int                 true  "Voucher ID"
-// @Param        input  body      UpdateVoucherInput  true  "Data Update Voucher"
-// @Success      200    {object}  map[string]interface{}
+// @Param        id     path      string                      true  "Voucher ID"
+// @Param        input  body      service.UpdateVoucherInput  true  "Data Update Voucher"
+// @Success      200    {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/vouchers/{id} [put]
-func UpdateVoucher(c *gin.Context) {
+func (h *VoucherHandler) UpdateVoucher(c *gin.Context) {
 	id := c.Param("id")
-	var input UpdateVoucherInput
+	var input service.UpdateVoucherInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ErrorResult(c, http.StatusBadRequest, "Data input tidak valid", err.Error())
 		return
 	}
 
-	var voucher model.Voucher
-	if err := config.DB.First(&voucher, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Voucher tidak ditemukan"})
+	voucher, err := h.voucherService.UpdateVoucher(id, input)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
 
-	voucher.DiscountAmount = input.DiscountAmount
-	voucher.Quota = input.Quota
-
-	if err := config.DB.Save(&voucher).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengupdate voucher"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Voucher berhasil diperbarui", "data": voucher})
+	utils.SuccessResult(c, http.StatusOK, "Voucher berhasil diperbarui", voucher)
 }
 
 // DeleteVoucher godoc
@@ -146,25 +119,20 @@ func UpdateVoucher(c *gin.Context) {
 // @Description  Admin menghapus voucher secara permanen
 // @Tags         admin
 // @Produce      json
-// @Param        id   path      int  true  "Voucher ID"
-// @Success      200  {object}  map[string]interface{}
+// @Param        id   path      string  true  "Voucher ID"
+// @Success      200  {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/vouchers/{id} [delete]
-func DeleteVoucher(c *gin.Context) {
+func (h *VoucherHandler) DeleteVoucher(c *gin.Context) {
 	id := c.Param("id")
-	var voucher model.Voucher
 
-	if err := config.DB.First(&voucher, id).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Voucher tidak ditemukan"})
+	err := h.voucherService.DeleteVoucher(id)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
 
-	if err := config.DB.Delete(&voucher).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus voucher"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{"message": "Voucher berhasil dihapus"})
+	utils.SuccessResult(c, http.StatusOK, "Voucher berhasil dihapus", nil)
 }
 
 // ValidateVoucher godoc
@@ -173,37 +141,30 @@ func DeleteVoucher(c *gin.Context) {
 // @Tags         public
 // @Produce      json
 // @Param        code   query     string  true  "Kode Voucher"
-// @Success      200    {object}  map[string]interface{}
+// @Success      200    {object}  utils.SuccessResponse
 // @Router       /api/vouchers/validate [get]
-func ValidateVoucher(c *gin.Context) {
+func (h *VoucherHandler) ValidateVoucher(c *gin.Context) {
 	code := c.Query("code")
 	if code == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Kode voucher harus diisi"})
+		utils.ErrorResult(c, http.StatusBadRequest, "Kode voucher harus diisi", nil)
 		return
 	}
 
-	var voucher model.Voucher
-	if err := config.DB.Where("code = ?", strings.ToUpper(code)).First(&voucher).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Voucher tidak ditemukan"})
+	voucher, err := h.voucherService.ValidateVoucher(code)
+	if err != nil {
+		// Mengembalikan bad request jika status tidak aktif atau kuota habis, not found jika tidak ada
+		statusCode := http.StatusBadRequest
+		if err.Error() == "voucher tidak ditemukan" {
+			statusCode = http.StatusNotFound
+		}
+
+		utils.ErrorResult(c, statusCode, err.Error(), nil)
 		return
 	}
 
-	if !voucher.IsActive {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Voucher sedang tidak aktif"})
-		return
-	}
-
-	if voucher.UsageCount >= voucher.Quota {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Kuota voucher sudah habis"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Voucher valid",
-		"data": gin.H{
-			"id":              voucher.ID,
-			"code":            voucher.Code,
-			"discount_amount": voucher.DiscountAmount,
-		},
+	utils.SuccessResult(c, http.StatusOK, "Voucher valid", gin.H{
+		"id":              voucher.ID,
+		"code":            voucher.Code,
+		"discount_amount": voucher.DiscountAmount,
 	})
 }

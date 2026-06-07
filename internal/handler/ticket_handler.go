@@ -3,13 +3,19 @@ package handler
 import (
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/gin-gonic/gin"
-	"github.com/google/uuid"
-	"github.com/ridwanafazn/smile-fest-api/internal/config"
-	"github.com/ridwanafazn/smile-fest-api/internal/model"
+	"github.com/ridwanafazn/smile-fest-api/internal/service"
+	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
 )
+
+type TicketHandler struct {
+	ticketService service.TicketService
+}
+
+func NewTicketHandler(ticketService service.TicketService) *TicketHandler {
+	return &TicketHandler{ticketService}
+}
 
 // --- KHUSUS PUBLIK ---
 
@@ -18,56 +24,43 @@ import (
 // @Description  Mengambil data harga dan tipe tiket yang sedang aktif untuk publik.
 // @Tags         public
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}
+// @Success      200  {object}  utils.SuccessResponse
 // @Router       /api/tickets/info [get]
-func GetTicketInfo(c *gin.Context) {
-	var ticketVariants []model.TicketVariant
-
-	// Publik: Hanya ambil tiket yang aktif DAN masuk dalam rentang tanggal
-	now := time.Now()
-	if err := config.DB.Where("is_active = ? AND start_date <= ? AND end_date >= ?", true, now, now).Find(&ticketVariants).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil data tiket dari database"})
+func (h *TicketHandler) GetTicketInfo(c *gin.Context) {
+	variants, err := h.ticketService.GetActiveTicketVariants()
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, "Gagal mengambil data tiket", err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Berhasil mengambil data tiket",
-		"data":    ticketVariants,
-	})
+	utils.SuccessResult(c, http.StatusOK, "Berhasil mengambil data tiket", variants)
 }
 
 // TrackTicket godoc
 // @Summary      Track E-Ticket & Payment Status
-// @Description  Peserta mencari tiket mereka, mengecek status verifikasi admin, atau melihat instruksi pembayaran manual (jika status masih pending).
+// @Description  Peserta mencari tiket mereka, mengecek status verifikasi admin, atau melihat instruksi pembayaran manual.
 // @Tags         public
 // @Produce      json
 // @Param        order_id  query     string  true  "Order ID (SMILE-xxx)"
 // @Param        email     query     string  true  "Email Peserta"
-// @Success      200       {object}  map[string]interface{}
+// @Success      200       {object}  utils.SuccessResponse
 // @Router       /api/tickets/track [get]
-func TrackTicket(c *gin.Context) {
+func (h *TicketHandler) TrackTicket(c *gin.Context) {
 	orderID := c.Query("order_id")
 	email := c.Query("email")
 
 	if orderID == "" || email == "" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Order ID dan Email wajib diisi"})
+		utils.ErrorResult(c, http.StatusBadRequest, "Order ID dan Email wajib diisi", nil)
 		return
 	}
 
-	var transaction model.Transaction
-	// Gunakan Preload("Tickets") agar data array pemegang tiket ikut terbawa
-	if err := config.DB.Preload("Tickets").Where("id = ? AND customer_email = ?", orderID, email).First(&transaction).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Data tidak ditemukan. Pastikan Order ID dan Email benar."})
+	transaction, err := h.ticketService.TrackTicket(orderID, email)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
 
-	// Mengembalikan seluruh objek transaksi ke Frontend.
-	// Golang akan otomatis mengubah field struct (TotalAmount, SessionBatch, dll)
-	// menjadi JSON keys (total_amount, session_batch, dll) sesuai tag json:"..." di model.
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Detail transaksi berhasil ditemukan",
-		"data":    transaction,
-	})
+	utils.SuccessResult(c, http.StatusOK, "Detail transaksi berhasil ditemukan", transaction)
 }
 
 // --- KHUSUS ADMIN ---
@@ -77,30 +70,17 @@ func TrackTicket(c *gin.Context) {
 // @Description  Mengambil seluruh data tipe tiket tanpa peduli status aktif atau periode tanggal.
 // @Tags         admin
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}
+// @Success      200  {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/ticket-variants [get]
-func GetAdminTicketVariants(c *gin.Context) {
-	var ticketVariants []model.TicketVariant
-
-	// FIX SQL Error: Tidak pakai 'created_at', diganti 'id desc' karena tabel tidak punya kolom created_at
-	if err := config.DB.Order("id desc").Find(&ticketVariants).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengambil seluruh data tiket dari database"})
+func (h *TicketHandler) GetAdminTicketVariants(c *gin.Context) {
+	variants, err := h.ticketService.GetAllAdminVariants()
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, "Gagal mengambil seluruh data tiket dari database", err.Error())
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Berhasil mengambil seluruh data tiket (Admin)",
-		"data":    ticketVariants,
-	})
-}
-
-type TicketVariantInput struct {
-	Name      string     `json:"name" binding:"required"`
-	Price     float64    `json:"price" binding:"required,min=0"`
-	Quota     int        `json:"quota" binding:"required,min=1"`
-	StartDate *time.Time `json:"start_date"`
-	EndDate   *time.Time `json:"end_date"`
+	utils.SuccessResult(c, http.StatusOK, "Berhasil mengambil seluruh data tiket (Admin)", variants)
 }
 
 // CreateTicketVariant godoc
@@ -109,51 +89,25 @@ type TicketVariantInput struct {
 // @Tags         admin
 // @Accept       json
 // @Produce      json
-// @Param        input  body      TicketVariantInput  true  "Data Gelombang Tiket"
-// @Success      201    {object}  map[string]interface{}
+// @Param        input  body      service.TicketVariantInput  true  "Data Gelombang Tiket"
+// @Success      201    {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/ticket-variants [post]
-func CreateTicketVariant(c *gin.Context) {
-	var input TicketVariantInput
+func (h *TicketHandler) CreateTicketVariant(c *gin.Context) {
+	var input service.TicketVariantInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ErrorResult(c, http.StatusBadRequest, "Data yang dikirim tidak valid", err.Error())
 		return
 	}
 
-	// Atur default tanggal jika kosong
-	now := time.Now()
-	startDate := now
-	if input.StartDate != nil {
-		startDate = *input.StartDate
-	}
-
-	// Jika end_date kosong, set 10 tahun dari sekarang (seolah-olah unlimited)
-	endDate := now.AddDate(10, 0, 0)
-	if input.EndDate != nil {
-		endDate = *input.EndDate
-	}
-
-	variant := model.TicketVariant{
-		ID:        uuid.New().String(),
-		Name:      input.Name,
-		Price:     input.Price,
-		IsActive:  false, // Otomatis nonaktif saat baru dibuat (standar keamanan)
-		StartDate: startDate,
-		EndDate:   endDate,
-		// Asumsi kita menggunakan properti Description sementara untuk menampung Quota sebelum skema DB diperbarui
-		// Description: fmt.Sprintf(`{"quota": %d}`, input.Quota),
-	}
-
-	if err := config.DB.Create(&variant).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menyimpan gelombang tiket ke database"})
+	variant, err := h.ticketService.CreateVariant(input)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}
 
-	c.JSON(http.StatusCreated, gin.H{
-		"message": "Gelombang tiket berhasil ditambahkan",
-		"data":    variant,
-	})
+	utils.SuccessResult(c, http.StatusCreated, "Gelombang tiket berhasil ditambahkan", variant)
 }
 
 // UpdateTicketVariant godoc
@@ -162,45 +116,27 @@ func CreateTicketVariant(c *gin.Context) {
 // @Tags         admin
 // @Accept       json
 // @Produce      json
-// @Param        id     path      string              true  "Variant ID"
-// @Param        input  body      TicketVariantInput  true  "Data Update Gelombang Tiket"
-// @Success      200    {object}  map[string]interface{}
+// @Param        id     path      string                      true  "Variant ID"
+// @Param        input  body      service.TicketVariantInput  true  "Data Update Gelombang Tiket"
+// @Success      200    {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/ticket-variants/{id} [put]
-func UpdateTicketVariant(c *gin.Context) {
+func (h *TicketHandler) UpdateTicketVariant(c *gin.Context) {
 	id := c.Param("id")
-	var input TicketVariantInput
+	var input service.TicketVariantInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		utils.ErrorResult(c, http.StatusBadRequest, "Data yang dikirim tidak valid", err.Error())
 		return
 	}
 
-	var variant model.TicketVariant
-	if err := config.DB.Where("id = ?", id).First(&variant).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Tipe tiket tidak ditemukan"})
+	variant, err := h.ticketService.UpdateVariant(id, input)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
 
-	variant.Name = input.Name
-	variant.Price = input.Price
-
-	if input.StartDate != nil {
-		variant.StartDate = *input.StartDate
-	}
-	if input.EndDate != nil {
-		variant.EndDate = *input.EndDate
-	}
-
-	if err := config.DB.Save(&variant).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal memperbarui data tiket"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Gelombang tiket berhasil diperbarui",
-		"data":    variant,
-	})
+	utils.SuccessResult(c, http.StatusOK, "Gelombang tiket berhasil diperbarui", variant)
 }
 
 // DeleteTicketVariant godoc
@@ -209,28 +145,19 @@ func UpdateTicketVariant(c *gin.Context) {
 // @Tags         admin
 // @Produce      json
 // @Param        id   path      string  true  "Variant ID"
-// @Success      200  {object}  map[string]interface{}
+// @Success      200  {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/ticket-variants/{id} [delete]
-func DeleteTicketVariant(c *gin.Context) {
+func (h *TicketHandler) DeleteTicketVariant(c *gin.Context) {
 	id := c.Param("id")
 
-	// Cegah hapus tiket jika sudah ada transaksi (mencegah Foreign Key Error)
-	var count int64
-	config.DB.Model(&model.Ticket{}).Where("ticket_variant_id = ?", id).Count(&count)
-	if count > 0 {
-		c.JSON(http.StatusConflict, gin.H{"error": "Tidak dapat menghapus tiket karena sudah ada transaksi yang membelinya. Sebaiknya nonaktifkan saja tiket ini."})
+	err := h.ticketService.DeleteVariant(id)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusConflict, err.Error(), nil)
 		return
 	}
 
-	if err := config.DB.Where("id = ?", id).Delete(&model.TicketVariant{}).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal menghapus tiket"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Gelombang tiket berhasil dihapus permanen",
-	})
+	utils.SuccessResult(c, http.StatusOK, "Gelombang tiket berhasil dihapus permanen", nil)
 }
 
 // ToggleTicketVariant godoc
@@ -239,28 +166,19 @@ func DeleteTicketVariant(c *gin.Context) {
 // @Tags         admin
 // @Produce      json
 // @Param        id   path      string  true  "Variant ID"
-// @Success      200  {object}  map[string]interface{}
+// @Success      200  {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/admin/ticket-variants/{id}/toggle [put]
-func ToggleTicketVariant(c *gin.Context) {
+func (h *TicketHandler) ToggleTicketVariant(c *gin.Context) {
 	id := c.Param("id")
-	var variant model.TicketVariant
 
-	if err := config.DB.Where("id = ?", id).First(&variant).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Tipe tiket tidak ditemukan"})
+	variant, statusStr, err := h.ticketService.ToggleVariantStatus(id)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
 
-	variant.IsActive = !variant.IsActive
-	config.DB.Save(&variant)
-
-	status := "ditutup"
-	if variant.IsActive {
-		status = "dibuka"
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":   fmt.Sprintf("Penjualan %s berhasil %s", variant.Name, status),
+	utils.SuccessResult(c, http.StatusOK, fmt.Sprintf("Penjualan %s berhasil %s", variant.Name, statusStr), gin.H{
 		"is_active": variant.IsActive,
 	})
 }
@@ -274,45 +192,46 @@ func ToggleTicketVariant(c *gin.Context) {
 // @Accept       json
 // @Produce      json
 // @Param        input  body      map[string]string  true  "Ticket UUID"
-// @Success      200    {object}  map[string]interface{}
+// @Success      200    {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/scanner/validate-ticket [post]
-func ValidateTicket(c *gin.Context) {
+func (h *TicketHandler) ValidateTicket(c *gin.Context) {
 	var input struct {
 		TicketID string `json:"ticket_id" binding:"required"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Format request tidak valid"})
+		utils.ErrorResult(c, http.StatusBadRequest, "Format request tidak valid", err.Error())
 		return
 	}
 
-	var ticket model.Ticket
-	if err := config.DB.Preload("Transaction").Where("id = ?", input.TicketID).First(&ticket).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "X QR Code tidak valid atau tiket tidak ditemukan"})
+	ticket, err := h.ticketService.ValidateTicket(input.TicketID)
+	if err != nil {
+		if ticket != nil && ticket.IsScanned {
+			name := ticket.AttendeeName
+			if name == "" {
+				name = "Peserta (Data Induk)"
+			}
+
+			timeStr := ""
+			if ticket.ScannedAt != nil {
+				timeStr = ticket.ScannedAt.Format("2006-01-02 15:04:05")
+			}
+
+			fullMessage := fmt.Sprintf("Tiket atas nama %s sudah dipindai pada %s", name, timeStr)
+
+			utils.ErrorResult(c, http.StatusBadRequest, fullMessage, gin.H{
+				"customer_name": name,
+				"scanned_at":    timeStr,
+			})
+			return
+		}
+
+		utils.ErrorResult(c, http.StatusNotFound, err.Error(), nil)
 		return
 	}
 
-	if ticket.IsScanned {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":         "TIKET SUDAH DIGUNAKAN!",
-			"scanned_at":    ticket.ScannedAt,
-			"customer_name": ticket.AttendeeName,
-		})
-		return
-	}
-
-	now := time.Now()
-	ticket.IsScanned = true
-	ticket.ScannedAt = &now
-
-	if err := config.DB.Save(&ticket).Error; err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Gagal mengupdate status tiket"})
-		return
-	}
-
-	c.JSON(http.StatusOK, gin.H{
-		"message":       "Validasi berhasil! Akses diizinkan.",
+	utils.SuccessResult(c, http.StatusOK, "Validasi berhasil! Akses diizinkan.", gin.H{
 		"customer_name": ticket.AttendeeName,
 		"ticket_id":     ticket.ID,
 	})
@@ -323,26 +242,33 @@ func ValidateTicket(c *gin.Context) {
 // @Description  Panitia lapangan melihat jumlah peserta yang sudah masuk
 // @Tags         scanner
 // @Produce      json
-// @Success      200  {object}  map[string]interface{}
+// @Success      200  {object}  utils.SuccessResponse
 // @Security     BearerAuth
 // @Router       /api/scanner/stats [get]
-func GetScannerStats(c *gin.Context) {
-	var totalTickets int64
-	var scannedTickets int64
+func (h *TicketHandler) GetScannerStats(c *gin.Context) {
+	stats, err := h.ticketService.GetScannerStats()
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
 
-	config.DB.Model(&model.Ticket{}).
-		Joins("JOIN transactions ON transactions.id = tickets.transaction_id").
-		Where("transactions.status = ?", "settlement").
-		Count(&totalTickets)
+	utils.SuccessResult(c, http.StatusOK, "Statistik antrean", stats)
+}
 
-	config.DB.Model(&model.Ticket{}).Where("is_scanned = ?", true).Count(&scannedTickets)
+// GetScannerHistory godoc
+// @Summary      Get Global Scanner History
+// @Description  Mengambil daftar riwayat pemindaian tiket secara global
+// @Tags         scanner
+// @Produce      json
+// @Success      200  {object}  utils.SuccessResponse
+// @Security     BearerAuth
+// @Router       /api/scanner/history [get]
+func (h *TicketHandler) GetScannerHistory(c *gin.Context) {
+	history, err := h.ticketService.GetScannerHistory()
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Statistik antrean",
-		"data": gin.H{
-			"total_tickets":   totalTickets,
-			"scanned_tickets": scannedTickets,
-			"remaining":       totalTickets - scannedTickets,
-		},
-	})
+	utils.SuccessResult(c, http.StatusOK, "Berhasil mengambil riwayat pemindaian global", history)
 }

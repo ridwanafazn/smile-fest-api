@@ -24,33 +24,147 @@ const docTemplate = `{
     "host": "{{.Host}}",
     "basePath": "{{.BasePath}}",
     "paths": {
-        "/api/admin/dashboard": {
+        "/api/admin/ticket-variants": {
             "get": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Mengambil agregasi data pendapatan dan penjualan tiket (Real-time)",
+                "description": "Mengambil seluruh data tipe tiket tanpa peduli status aktif atau periode tanggal.",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "admin"
                 ],
-                "summary": "Get Dashboard Statistics",
+                "summary": "Get All Ticket Variants (Admin)",
                 "responses": {
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
+                        }
+                    }
+                }
+            },
+            "post": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin membuat gelombang tiket baru",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Create New Ticket Variant",
+                "parameters": [
+                    {
+                        "description": "Data Gelombang Tiket",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.TicketVariantInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "201": {
+                        "description": "Created",
+                        "schema": {
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
             }
         },
         "/api/admin/ticket-variants/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin mengubah harga atau periode gelombang tiket",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Update Ticket Variant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Variant ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data Update Gelombang Tiket",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.TicketVariantInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/utils.SuccessResponse"
+                        }
+                    }
+                }
+            },
+            "delete": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin menghapus gelombang tiket (Hanya jika belum ada transaksi terkait)",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Delete Ticket Variant",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "Variant ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/utils.SuccessResponse"
+                        }
+                    }
+                }
+            }
+        },
+        "/api/admin/ticket-variants/{id}/toggle": {
             "put": {
                 "security": [
                     {
@@ -78,89 +192,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/transactions": {
-            "get": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Melihat daftar riwayat transaksi peserta.",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Get All Transactions",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Cari nama / email",
-                        "name": "search",
-                        "in": "query"
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/api/admin/transactions/{id}/verify": {
-            "put": {
-                "security": [
-                    {
-                        "BearerAuth": []
-                    }
-                ],
-                "description": "Admin melakukan persetujuan (approve) atau penolakan (reject) terhadap bukti transfer peserta. Approve akan mengirimkan E-Ticket otomatis.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "admin"
-                ],
-                "summary": "Verify Manual Payment",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Order ID (Transaction ID)",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "description": "Aksi Verifikasi (approve/reject)",
-                        "name": "input",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_handler.VerifyPaymentInput"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -185,8 +217,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -215,7 +246,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handler.CreateUserInput"
+                            "$ref": "#/definitions/service.CreateUserInput"
                         }
                     }
                 ],
@@ -223,8 +254,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -258,8 +288,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -284,8 +313,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -314,7 +342,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handler.CreateVoucherInput"
+                            "$ref": "#/definitions/service.CreateVoucherInput"
                         }
                     }
                 ],
@@ -322,8 +350,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -349,7 +376,7 @@ const docTemplate = `{
                 "summary": "Update Voucher",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Voucher ID",
                         "name": "id",
                         "in": "path",
@@ -361,7 +388,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handler.UpdateVoucherInput"
+                            "$ref": "#/definitions/service.UpdateVoucherInput"
                         }
                     }
                 ],
@@ -369,8 +396,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -391,7 +417,7 @@ const docTemplate = `{
                 "summary": "Delete Voucher",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Voucher ID",
                         "name": "id",
                         "in": "path",
@@ -402,8 +428,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -426,7 +451,7 @@ const docTemplate = `{
                 "summary": "Toggle Voucher Status",
                 "parameters": [
                     {
-                        "type": "integer",
+                        "type": "string",
                         "description": "Voucher ID",
                         "name": "id",
                         "in": "path",
@@ -437,43 +462,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/api/checkout": {
-            "post": {
-                "description": "Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi tiket selama 24 jam. Mengirim email intruksi pembayaran dengan goroutine.",
-                "consumes": [
-                    "application/json"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public"
-                ],
-                "summary": "Create Transaction Checkout (Manual Transfer)",
-                "parameters": [
-                    {
-                        "description": "Data Pembeli dan Daftar Pemegang Tiket",
-                        "name": "input",
-                        "in": "body",
-                        "required": true,
-                        "schema": {
-                            "$ref": "#/definitions/internal_handler.CheckoutInput"
-                        }
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -499,7 +488,7 @@ const docTemplate = `{
                         "in": "body",
                         "required": true,
                         "schema": {
-                            "$ref": "#/definitions/internal_handler.LoginInput"
+                            "$ref": "#/definitions/service.LoginInput"
                         }
                     }
                 ],
@@ -507,8 +496,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -533,8 +521,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -576,8 +563,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -597,8 +583,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -606,7 +591,7 @@ const docTemplate = `{
         },
         "/api/tickets/info": {
             "get": {
-                "description": "Mengambil data harga dan tipe tiket yang sedang aktif berdasarkan periode tanggal hari ini",
+                "description": "Mengambil data harga dan tipe tiket yang sedang aktif untuk publik.",
                 "produces": [
                     "application/json"
                 ],
@@ -618,8 +603,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -627,7 +611,7 @@ const docTemplate = `{
         },
         "/api/tickets/track": {
             "get": {
-                "description": "Peserta mencari tiket mereka, mengecek status verifikasi admin, atau melihat instruksi pembayaran manual (jika status masih pending).",
+                "description": "Peserta mencari tiket mereka, mengecek status verifikasi admin, atau melihat instruksi pembayaran manual.",
                 "produces": [
                     "application/json"
                 ],
@@ -655,48 +639,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
-                        }
-                    }
-                }
-            }
-        },
-        "/api/transactions/{id}/upload-proof": {
-            "post": {
-                "description": "Mengunggah gambar bukti transfer untuk transaksi tertentu",
-                "consumes": [
-                    "multipart/form-data"
-                ],
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "public"
-                ],
-                "summary": "Upload Payment Proof",
-                "parameters": [
-                    {
-                        "type": "string",
-                        "description": "Order ID",
-                        "name": "id",
-                        "in": "path",
-                        "required": true
-                    },
-                    {
-                        "type": "file",
-                        "description": "File Gambar Bukti Transfer (Max 2MB)",
-                        "name": "file",
-                        "in": "formData",
-                        "required": true
-                    }
-                ],
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -725,8 +668,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "type": "object",
-                            "additionalProperties": true
+                            "$ref": "#/definitions/utils.SuccessResponse"
                         }
                     }
                 }
@@ -734,71 +676,7 @@ const docTemplate = `{
         }
     },
     "definitions": {
-        "internal_handler.Attendee": {
-            "type": "object",
-            "required": [
-                "name"
-            ],
-            "properties": {
-                "name": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_handler.CheckoutInput": {
-            "type": "object",
-            "required": [
-                "attendees",
-                "customer_email",
-                "customer_name",
-                "customer_phone",
-                "ticket_type"
-            ],
-            "properties": {
-                "attendees": {
-                    "type": "array",
-                    "minItems": 1,
-                    "items": {
-                        "$ref": "#/definitions/internal_handler.Attendee"
-                    }
-                },
-                "contribution_role": {
-                    "type": "string"
-                },
-                "customer_email": {
-                    "type": "string"
-                },
-                "customer_name": {
-                    "type": "string"
-                },
-                "customer_phone": {
-                    "type": "string"
-                },
-                "profile_age": {
-                    "description": "Menggantikan field survei dengan Profile",
-                    "type": "string"
-                },
-                "profile_city": {
-                    "type": "string"
-                },
-                "profile_education": {
-                    "type": "string"
-                },
-                "profile_job": {
-                    "type": "string"
-                },
-                "profile_motivation": {
-                    "type": "string"
-                },
-                "ticket_type": {
-                    "type": "string"
-                },
-                "voucher_code": {
-                    "type": "string"
-                }
-            }
-        },
-        "internal_handler.CreateUserInput": {
+        "service.CreateUserInput": {
             "type": "object",
             "required": [
                 "password",
@@ -810,7 +688,6 @@ const docTemplate = `{
                     "type": "string"
                 },
                 "role": {
-                    "description": "admin / scanner",
                     "type": "string"
                 },
                 "username": {
@@ -818,7 +695,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handler.CreateVoucherInput": {
+        "service.CreateVoucherInput": {
             "type": "object",
             "required": [
                 "code",
@@ -837,7 +714,7 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handler.LoginInput": {
+        "service.LoginInput": {
             "type": "object",
             "required": [
                 "password",
@@ -852,7 +729,34 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handler.UpdateVoucherInput": {
+        "service.TicketVariantInput": {
+            "type": "object",
+            "required": [
+                "name",
+                "price",
+                "quota"
+            ],
+            "properties": {
+                "end_date": {
+                    "type": "string"
+                },
+                "name": {
+                    "type": "string"
+                },
+                "price": {
+                    "type": "number",
+                    "minimum": 0
+                },
+                "quota": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "start_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.UpdateVoucherInput": {
             "type": "object",
             "required": [
                 "discount_amount",
@@ -867,18 +771,26 @@ const docTemplate = `{
                 }
             }
         },
-        "internal_handler.VerifyPaymentInput": {
+        "utils.Meta": {
             "type": "object",
-            "required": [
-                "action"
-            ],
             "properties": {
-                "action": {
-                    "type": "string",
-                    "enum": [
-                        "approve",
-                        "reject"
-                    ]
+                "code": {
+                    "type": "integer"
+                },
+                "message": {
+                    "type": "string"
+                },
+                "status": {
+                    "type": "string"
+                }
+            }
+        },
+        "utils.SuccessResponse": {
+            "type": "object",
+            "properties": {
+                "data": {},
+                "meta": {
+                    "$ref": "#/definitions/utils.Meta"
                 }
             }
         }

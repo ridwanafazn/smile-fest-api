@@ -1,16 +1,22 @@
 package handler
 
 import (
-	"fmt"
-	"log"
 	"net/http"
 
 	"github.com/gin-gonic/gin"
-	"github.com/ridwanafazn/smile-fest-api/internal/config"
-	"github.com/ridwanafazn/smile-fest-api/internal/model"
+	"github.com/ridwanafazn/smile-fest-api/internal/service"
 	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
-	"gorm.io/gorm"
 )
+
+type AdminHandler struct {
+	trxService  service.TransactionService
+	userService service.UserService // Tambahan: Injeksi UserService untuk manajemen kotak sampah
+}
+
+// Tambahkan userService ke dalam parameter konstruktor
+func NewAdminHandler(trxService service.TransactionService, userService service.UserService) *AdminHandler {
+	return &AdminHandler{trxService, userService}
+}
 
 type VerifyPaymentInput struct {
 	Action string `json:"action" binding:"required,oneof=approve reject"`
@@ -18,94 +24,76 @@ type VerifyPaymentInput struct {
 
 // VerifyPayment godoc
 // @Summary      Verify Manual Payment
-// @Description  Admin melakukan persetujuan (approve) atau penolakan (reject) terhadap bukti transfer peserta. Approve akan mengirimkan E-Ticket otomatis.
+// @Description  Admin melakukan persetujuan atau penolakan
 // @Tags         admin
-// @Accept       json
-// @Produce      json
-// @Param        id     path      string              true  "Order ID (Transaction ID)"
-// @Param        input  body      VerifyPaymentInput  true  "Aksi Verifikasi (approve/reject)"
-// @Success      200    {object}  map[string]interface{}
-// @Security     BearerAuth
-// @Router       /api/admin/transactions/{id}/verify [put]
-func VerifyPayment(c *gin.Context) {
+func (h *AdminHandler) VerifyPayment(c *gin.Context) {
 	orderID := c.Param("id")
 	var input VerifyPaymentInput
 
 	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Aksi tidak valid. Harus 'approve' atau 'reject'"})
+		utils.ErrorResult(c, http.StatusBadRequest, "Aksi tidak valid. Harus 'approve' atau 'reject'", nil)
 		return
 	}
 
-	var transaction model.Transaction
-	if err := config.DB.Where("id = ?", orderID).First(&transaction).Error; err != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "Transaksi tidak ditemukan"})
+	if err := h.trxService.VerifyPayment(orderID, input.Action); err != nil {
+		utils.ErrorResult(c, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
 
-	if transaction.Status == "settlement" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "Transaksi ini sudah disetujui sebelumnya"})
-		return
-	}
-
-	// --- JIKA ACTION == "reject" ---
 	if input.Action == "reject" {
-		transaction.Status = "cancel"
-		config.DB.Save(&transaction)
-		c.JSON(http.StatusOK, gin.H{"message": "Pembayaran ditolak. Status menjadi cancel."})
+		utils.SuccessResult(c, http.StatusOK, "Pembayaran ditolak. Status menjadi cancel.", nil)
 		return
 	}
 
-	// --- JIKA ACTION == "approve" ---
-	// Menggunakan GORM Transaction untuk menjamin integritas data (ACID)
-	err := config.DB.Transaction(func(tx *gorm.DB) error {
-		transaction.Status = "settlement"
-
-		// Potong kuota voucher jika transaksi menggunakan voucher
-		if transaction.VoucherID != nil {
-			var qty int64
-			if err := tx.Model(&model.Ticket{}).Where("transaction_id = ?", transaction.ID).Count(&qty).Error; err != nil {
-				return err
-			}
-			if qty > 0 {
-				if err := tx.Model(&model.Voucher{}).Where("id = ?", transaction.VoucherID).UpdateColumn("usage_count", gorm.Expr("usage_count + ?", qty)).Error; err != nil {
-					return err
-				}
-			}
-		}
-
-		// Simpan perubahan status transaksi
-		if err := tx.Save(&transaction).Error; err != nil {
-			return err
-		}
-
-		return nil // Return nil berarti transaksi DB di-commit secara permanen
+	utils.SuccessResult(c, http.StatusOK, "Pembayaran berhasil diverifikasi. E-Ticket sedang dikirim.", gin.H{
+		"status": "settlement",
 	})
+}
 
+// =====================================================================
+// FITUR KOTAK SAMPAH (TRASH BIN) PERSONIL
+// =====================================================================
+
+// GetTrashedUsers godoc
+// @Summary      Get Trashed Users
+// @Description  Melihat daftar personil yang telah dicabut aksesnya (Soft Deleted)
+// @Tags         admin
+func (h *AdminHandler) GetTrashedUsers(c *gin.Context) {
+	users, err := h.userService.GetTrashedUsers()
 	if err != nil {
-		log.Printf("❌ [DB ERROR] Gagal menyetujui transaksi %s: %v\n", transaction.ID, err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": "Terjadi kesalahan internal saat memproses persetujuan."})
+		utils.ErrorResult(c, http.StatusInternalServerError, "Gagal mengambil data kotak sampah", err.Error())
 		return
 	}
 
-	// Trigger Pengiriman Email Tiket via GAS (Berjalan di background via goroutine)
-	go func() {
-		emailData := utils.EmailData{
-			CustomerName: transaction.CustomerName,
-			OrderID:      transaction.ID,
-			// Diselaraskan dengan domain frontend sebelumnya agar konsisten
-			TicketLink: fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", transaction.ID, transaction.CustomerEmail),
-		}
+	utils.SuccessResult(c, http.StatusOK, "Berhasil mengambil data kotak sampah personil", users)
+}
 
-		errEmail := utils.SendTicketEmail(transaction.CustomerEmail, emailData)
-		if errEmail != nil {
-			log.Printf("❌ [EMAIL ERROR] Gagal mengirim tiket ke %s. Pesan Error: %v\n", transaction.CustomerEmail, errEmail)
-		} else {
-			log.Printf("✅ [EMAIL SUCCESS] Tiket lunas berhasil dikirim ke %s\n", transaction.CustomerEmail)
-		}
-	}()
+// RestoreUser godoc
+// @Summary      Restore Trashed User
+// @Description  Memulihkan akses personil dari kotak sampah
+// @Tags         admin
+func (h *AdminHandler) RestoreUser(c *gin.Context) {
+	id := c.Param("id")
 
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Pembayaran berhasil diverifikasi. E-Ticket sedang dikirim ke email peserta.",
-		"status":  "settlement",
-	})
+	if err := h.userService.RestoreUser(id); err != nil {
+		utils.ErrorResult(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+
+	utils.SuccessResult(c, http.StatusOK, "Akun personil berhasil dipulihkan", nil)
+}
+
+// HardDeleteUser godoc
+// @Summary      Hard Delete User
+// @Description  Memusnahkan personil secara fisik dari database beserta relasinya
+// @Tags         admin
+func (h *AdminHandler) HardDeleteUser(c *gin.Context) {
+	id := c.Param("id")
+
+	if err := h.userService.HardDeleteUser(id); err != nil {
+		utils.ErrorResult(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+
+	utils.SuccessResult(c, http.StatusOK, "Akun personil berhasil dimusnahkan secara permanen", nil)
 }

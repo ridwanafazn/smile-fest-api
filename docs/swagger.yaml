@@ -1,55 +1,10 @@
 basePath: /
 definitions:
-  internal_handler.Attendee:
-    properties:
-      name:
-        type: string
-    required:
-    - name
-    type: object
-  internal_handler.CheckoutInput:
-    properties:
-      attendees:
-        items:
-          $ref: '#/definitions/internal_handler.Attendee'
-        minItems: 1
-        type: array
-      contribution_role:
-        type: string
-      customer_email:
-        type: string
-      customer_name:
-        type: string
-      customer_phone:
-        type: string
-      profile_age:
-        description: Menggantikan field survei dengan Profile
-        type: string
-      profile_city:
-        type: string
-      profile_education:
-        type: string
-      profile_job:
-        type: string
-      profile_motivation:
-        type: string
-      ticket_type:
-        type: string
-      voucher_code:
-        type: string
-    required:
-    - attendees
-    - customer_email
-    - customer_name
-    - customer_phone
-    - ticket_type
-    type: object
-  internal_handler.CreateUserInput:
+  service.CreateUserInput:
     properties:
       password:
         type: string
       role:
-        description: admin / scanner
         type: string
       username:
         type: string
@@ -58,7 +13,7 @@ definitions:
     - role
     - username
     type: object
-  internal_handler.CreateVoucherInput:
+  service.CreateVoucherInput:
     properties:
       code:
         type: string
@@ -71,7 +26,7 @@ definitions:
     - discount_amount
     - quota
     type: object
-  internal_handler.LoginInput:
+  service.LoginInput:
     properties:
       password:
         type: string
@@ -81,7 +36,26 @@ definitions:
     - password
     - username
     type: object
-  internal_handler.UpdateVoucherInput:
+  service.TicketVariantInput:
+    properties:
+      end_date:
+        type: string
+      name:
+        type: string
+      price:
+        minimum: 0
+        type: number
+      quota:
+        minimum: 1
+        type: integer
+      start_date:
+        type: string
+    required:
+    - name
+    - price
+    - quota
+    type: object
+  service.UpdateVoucherInput:
     properties:
       discount_amount:
         type: number
@@ -91,15 +65,20 @@ definitions:
     - discount_amount
     - quota
     type: object
-  internal_handler.VerifyPaymentInput:
+  utils.Meta:
     properties:
-      action:
-        enum:
-        - approve
-        - reject
+      code:
+        type: integer
+      message:
         type: string
-    required:
-    - action
+      status:
+        type: string
+    type: object
+  utils.SuccessResponse:
+    properties:
+      data: {}
+      meta:
+        $ref: '#/definitions/utils.Meta'
     type: object
 host: localhost:8080
 info:
@@ -115,23 +94,96 @@ info:
   title: SMILE FEST API
   version: "1.0"
 paths:
-  /api/admin/dashboard:
+  /api/admin/ticket-variants:
     get:
-      description: Mengambil agregasi data pendapatan dan penjualan tiket (Real-time)
+      description: Mengambil seluruh data tipe tiket tanpa peduli status aktif atau
+        periode tanggal.
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
-      summary: Get Dashboard Statistics
+      summary: Get All Ticket Variants (Admin)
+      tags:
+      - admin
+    post:
+      consumes:
+      - application/json
+      description: Admin membuat gelombang tiket baru
+      parameters:
+      - description: Data Gelombang Tiket
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/service.TicketVariantInput'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/utils.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Create New Ticket Variant
       tags:
       - admin
   /api/admin/ticket-variants/{id}:
+    delete:
+      description: Admin menghapus gelombang tiket (Hanya jika belum ada transaksi
+        terkait)
+      parameters:
+      - description: Variant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/utils.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Delete Ticket Variant
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: Admin mengubah harga atau periode gelombang tiket
+      parameters:
+      - description: Variant ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Data Update Gelombang Tiket
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/service.TicketVariantInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/utils.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Update Ticket Variant
+      tags:
+      - admin
+  /api/admin/ticket-variants/{id}/toggle:
     put:
       description: Admin membuka atau menutup penjualan fase tiket secara manual (Kill
         switch)
@@ -147,63 +199,10 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Toggle Ticket Variant Status
-      tags:
-      - admin
-  /api/admin/transactions:
-    get:
-      description: Melihat daftar riwayat transaksi peserta.
-      parameters:
-      - description: Cari nama / email
-        in: query
-        name: search
-        type: string
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Get All Transactions
-      tags:
-      - admin
-  /api/admin/transactions/{id}/verify:
-    put:
-      consumes:
-      - application/json
-      description: Admin melakukan persetujuan (approve) atau penolakan (reject) terhadap
-        bukti transfer peserta. Approve akan mengirimkan E-Ticket otomatis.
-      parameters:
-      - description: Order ID (Transaction ID)
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: Aksi Verifikasi (approve/reject)
-        in: body
-        name: input
-        required: true
-        schema:
-          $ref: '#/definitions/internal_handler.VerifyPaymentInput'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      security:
-      - BearerAuth: []
-      summary: Verify Manual Payment
       tags:
       - admin
   /api/admin/users:
@@ -215,8 +214,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Get All Users
@@ -232,15 +230,14 @@ paths:
         name: input
         required: true
         schema:
-          $ref: '#/definitions/internal_handler.CreateUserInput'
+          $ref: '#/definitions/service.CreateUserInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Create New User
@@ -261,8 +258,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Delete User
@@ -277,8 +273,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Get All Vouchers
@@ -294,15 +289,14 @@ paths:
         name: input
         required: true
         schema:
-          $ref: '#/definitions/internal_handler.CreateVoucherInput'
+          $ref: '#/definitions/service.CreateVoucherInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Create New Voucher
@@ -316,15 +310,14 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Delete Voucher
@@ -339,21 +332,20 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       - description: Data Update Voucher
         in: body
         name: input
         required: true
         schema:
-          $ref: '#/definitions/internal_handler.UpdateVoucherInput'
+          $ref: '#/definitions/service.UpdateVoucherInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Update Voucher
@@ -367,44 +359,19 @@ paths:
         in: path
         name: id
         required: true
-        type: integer
+        type: string
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Toggle Voucher Status
       tags:
       - admin
-  /api/checkout:
-    post:
-      consumes:
-      - application/json
-      description: Membuat transaksi dengan kode unik dan auto-batching sesi, reservasi
-        tiket selama 24 jam. Mengirim email intruksi pembayaran dengan goroutine.
-      parameters:
-      - description: Data Pembeli dan Daftar Pemegang Tiket
-        in: body
-        name: input
-        required: true
-        schema:
-          $ref: '#/definitions/internal_handler.CheckoutInput'
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Create Transaction Checkout (Manual Transfer)
-      tags:
-      - public
   /api/login:
     post:
       consumes:
@@ -416,15 +383,14 @@ paths:
         name: input
         required: true
         schema:
-          $ref: '#/definitions/internal_handler.LoginInput'
+          $ref: '#/definitions/service.LoginInput'
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       summary: User Login
       tags:
       - auth
@@ -437,8 +403,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Get Scanner Stats
@@ -464,8 +429,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       security:
       - BearerAuth: []
       summary: Validate Ticket
@@ -481,30 +445,27 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       summary: Seed First Admin
       tags:
       - auth
   /api/tickets/info:
     get:
-      description: Mengambil data harga dan tipe tiket yang sedang aktif berdasarkan
-        periode tanggal hari ini
+      description: Mengambil data harga dan tipe tiket yang sedang aktif untuk publik.
       produces:
       - application/json
       responses:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       summary: Get Ticket Info
       tags:
       - public
   /api/tickets/track:
     get:
       description: Peserta mencari tiket mereka, mengecek status verifikasi admin,
-        atau melihat instruksi pembayaran manual (jika status masih pending).
+        atau melihat instruksi pembayaran manual.
       parameters:
       - description: Order ID (SMILE-xxx)
         in: query
@@ -522,36 +483,8 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       summary: Track E-Ticket & Payment Status
-      tags:
-      - public
-  /api/transactions/{id}/upload-proof:
-    post:
-      consumes:
-      - multipart/form-data
-      description: Mengunggah gambar bukti transfer untuk transaksi tertentu
-      parameters:
-      - description: Order ID
-        in: path
-        name: id
-        required: true
-        type: string
-      - description: File Gambar Bukti Transfer (Max 2MB)
-        in: formData
-        name: file
-        required: true
-        type: file
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            additionalProperties: true
-            type: object
-      summary: Upload Payment Proof
       tags:
       - public
   /api/vouchers/validate:
@@ -570,8 +503,7 @@ paths:
         "200":
           description: OK
           schema:
-            additionalProperties: true
-            type: object
+            $ref: '#/definitions/utils.SuccessResponse'
       summary: Validate Voucher Code
       tags:
       - public

@@ -79,6 +79,8 @@ type Ticket struct {
 	IsScanned       bool         `gorm:"default:false" json:"is_scanned"`
 	ScannedAt       *time.Time   `json:"scanned_at"`
 	CreatedAt       time.Time    `json:"created_at"`
+
+	TicketVariant *TicketVariant `gorm:"foreignKey:TicketVariantID" json:"ticket_variant,omitempty"`
 }
 
 type TicketVariant struct {

@@ -228,7 +228,7 @@ const docTemplate = `{
                         "BearerAuth": []
                     }
                 ],
-                "description": "Hanya bisa diakses Admin untuk membuat akun Scanner/Admin baru",
+                "description": "Hanya bisa diakses Admin untuk membuat akun Scanner atau Admin baru",
                 "consumes": [
                     "application/json"
                 ],
@@ -261,13 +261,57 @@ const docTemplate = `{
             }
         },
         "/api/admin/users/{id}": {
+            "put": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Admin memperbarui data personil",
+                "consumes": [
+                    "application/json"
+                ],
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "admin"
+                ],
+                "summary": "Update User",
+                "parameters": [
+                    {
+                        "type": "string",
+                        "description": "User ID",
+                        "name": "id",
+                        "in": "path",
+                        "required": true
+                    },
+                    {
+                        "description": "Data User Baru",
+                        "name": "input",
+                        "in": "body",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/definitions/service.UpdateUserInput"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/utils.SuccessResponse"
+                        }
+                    }
+                }
+            },
             "delete": {
                 "security": [
                     {
                         "BearerAuth": []
                     }
                 ],
-                "description": "Admin menghapus/mencabut akses akun panitia",
+                "description": "Admin menghapus akses akun panitia",
                 "produces": [
                     "application/json"
                 ],
@@ -502,6 +546,31 @@ const docTemplate = `{
                 }
             }
         },
+        "/api/scanner/history": {
+            "get": {
+                "security": [
+                    {
+                        "BearerAuth": []
+                    }
+                ],
+                "description": "Mengambil daftar riwayat pemindaian tiket secara global",
+                "produces": [
+                    "application/json"
+                ],
+                "tags": [
+                    "scanner"
+                ],
+                "summary": "Get Global Scanner History",
+                "responses": {
+                    "200": {
+                        "description": "OK",
+                        "schema": {
+                            "$ref": "#/definitions/utils.SuccessResponse"
+                        }
+                    }
+                }
+            }
+        },
         "/api/scanner/stats": {
             "get": {
                 "security": [
@@ -571,7 +640,7 @@ const docTemplate = `{
         },
         "/api/seed-admin": {
             "post": {
-                "description": "Temporer untuk membuat akun admin pertama (Matikan rute ini setelah dipakai)",
+                "description": "Temporer untuk membuat akun admin pertama",
                 "produces": [
                     "application/json"
                 ],
@@ -752,6 +821,24 @@ const docTemplate = `{
                     "minimum": 1
                 },
                 "start_date": {
+                    "type": "string"
+                }
+            }
+        },
+        "service.UpdateUserInput": {
+            "type": "object",
+            "required": [
+                "role",
+                "username"
+            ],
+            "properties": {
+                "password": {
+                    "type": "string"
+                },
+                "role": {
+                    "type": "string"
+                },
+                "username": {
                     "type": "string"
                 }
             }

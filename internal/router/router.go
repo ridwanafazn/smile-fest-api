@@ -90,6 +90,8 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/ticket-variants/:id", ticketHandler.UpdateTicketVariant)
 		admin.DELETE("/ticket-variants/:id", ticketHandler.DeleteTicketVariant)
 		admin.PUT("/ticket-variants/:id/toggle", ticketHandler.ToggleTicketVariant)
+
+		admin.GET("/transactions/insights", trxHandler.GetTransactionInsights)
 	}
 
 	scanner := r.Group("/api/scanner")

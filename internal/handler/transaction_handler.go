@@ -125,3 +125,33 @@ func (h *TransactionHandler) GetTransactions(c *gin.Context) {
 
 	utils.PaginatedResult(c, http.StatusOK, "Berhasil mengambil data transaksi", transactions, meta)
 }
+
+// GetTransactionInsights godoc
+// @Summary      Get Transaction Insights for Admin
+// @Description  Melihat data order_id, email, nama tiket, voucher komunitas, dan varian tiket gelombang dengan paginasi
+func (h *TransactionHandler) GetTransactionInsights(c *gin.Context) {
+	search := c.Query("search")
+	voucherFilter := c.Query("voucher")
+	variantFilter := c.Query("variant")
+
+	pageStr := c.DefaultQuery("page", "1")
+	limitStr := c.DefaultQuery("limit", "10")
+
+	page, _ := strconv.Atoi(pageStr)
+	limit, _ := strconv.Atoi(limitStr)
+
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+
+	transactions, meta, err := h.trxService.GetTransactionInsights(page, limit, search, voucherFilter, variantFilter)
+	if err != nil {
+		utils.ErrorResult(c, http.StatusInternalServerError, err.Error(), nil)
+		return
+	}
+
+	utils.PaginatedResult(c, http.StatusOK, "Berhasil mengambil data insight transaksi", transactions, meta)
+}

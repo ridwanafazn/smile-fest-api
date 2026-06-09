@@ -47,6 +47,7 @@ type TransactionService interface {
 	GetPaginatedTransactions(page, limit int, search, status string) ([]model.Transaction, utils.PaginationMeta, error)
 	GetDashboardStats() (map[string]interface{}, error)
 	VerifyPayment(orderID, action string) error
+	GetTransactionInsights(page, limit int, search, voucherFilter, variantFilter string) ([]model.Transaction, utils.PaginationMeta, error)
 }
 
 type transactionService struct {
@@ -253,4 +254,22 @@ func (s *transactionService) VerifyPayment(orderID, action string) error {
 	}
 
 	return nil
+}
+
+func (s *transactionService) GetTransactionInsights(page, limit int, search, voucherFilter, variantFilter string) ([]model.Transaction, utils.PaginationMeta, error) {
+	transactions, totalRecords, err := s.trxRepo.GetTransactionInsights(page, limit, search, voucherFilter, variantFilter)
+	if err != nil {
+		return nil, utils.PaginationMeta{}, errors.New("gagal mengambil data insight transaksi")
+	}
+
+	totalPages := int(math.Ceil(float64(totalRecords) / float64(limit)))
+
+	meta := utils.PaginationMeta{
+		CurrentPage:  page,
+		TotalPages:   totalPages,
+		TotalRecords: totalRecords,
+		Limit:        limit,
+	}
+
+	return transactions, meta, nil
 }

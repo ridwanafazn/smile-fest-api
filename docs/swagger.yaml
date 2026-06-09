@@ -55,6 +55,18 @@ definitions:
     - price
     - quota
     type: object
+  service.UpdateUserInput:
+    properties:
+      password:
+        type: string
+      role:
+        type: string
+      username:
+        type: string
+    required:
+    - role
+    - username
+    type: object
   service.UpdateVoucherInput:
     properties:
       discount_amount:
@@ -223,7 +235,8 @@ paths:
     post:
       consumes:
       - application/json
-      description: Hanya bisa diakses Admin untuk membuat akun Scanner/Admin baru
+      description: Hanya bisa diakses Admin untuk membuat akun Scanner atau Admin
+        baru
       parameters:
       - description: Data User Baru
         in: body
@@ -245,7 +258,7 @@ paths:
       - admin
   /api/admin/users/{id}:
     delete:
-      description: Admin menghapus/mencabut akses akun panitia
+      description: Admin menghapus akses akun panitia
       parameters:
       - description: User ID
         in: path
@@ -262,6 +275,34 @@ paths:
       security:
       - BearerAuth: []
       summary: Delete User
+      tags:
+      - admin
+    put:
+      consumes:
+      - application/json
+      description: Admin memperbarui data personil
+      parameters:
+      - description: User ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Data User Baru
+        in: body
+        name: input
+        required: true
+        schema:
+          $ref: '#/definitions/service.UpdateUserInput'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/utils.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Update User
       tags:
       - admin
   /api/admin/vouchers:
@@ -394,6 +435,21 @@ paths:
       summary: User Login
       tags:
       - auth
+  /api/scanner/history:
+    get:
+      description: Mengambil daftar riwayat pemindaian tiket secara global
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/utils.SuccessResponse'
+      security:
+      - BearerAuth: []
+      summary: Get Global Scanner History
+      tags:
+      - scanner
   /api/scanner/stats:
     get:
       description: Panitia lapangan melihat jumlah peserta yang sudah masuk
@@ -437,8 +493,7 @@ paths:
       - scanner
   /api/seed-admin:
     post:
-      description: Temporer untuk membuat akun admin pertama (Matikan rute ini setelah
-        dipakai)
+      description: Temporer untuk membuat akun admin pertama
       produces:
       - application/json
       responses:

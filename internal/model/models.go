@@ -57,9 +57,9 @@ type Transaction struct {
 	ExpiresAt       time.Time `json:"expires_at"`                              // Batas waktu transfer 24 Jam
 
 	// Status: 'pending', 'waiting_verification', 'settlement', 'cancel', 'expired'
-	Status    string  `gorm:"default:'pending'" json:"status"`
-	VoucherID *uint   `json:"voucher_id"`
-	Voucher   Voucher `json:"-"`
+	Status    string   `gorm:"default:'pending'" json:"status"`
+	VoucherID *uint    `json:"voucher_id"`
+	Voucher   *Voucher `json:"voucher,omitempty"`
 
 	// Legacy Midtrans (Disimpan untuk cadangan/rollback)
 	SnapToken string `json:"snap_token"`

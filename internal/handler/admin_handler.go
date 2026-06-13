@@ -97,3 +97,19 @@ func (h *AdminHandler) HardDeleteUser(c *gin.Context) {
 
 	utils.SuccessResult(c, http.StatusOK, "Akun personil berhasil dimusnahkan secara permanen", nil)
 }
+
+// BlastEmail godoc
+// @Summary      Blast Email Panduan Hari-H
+// @Description  Admin memicu pengiriman email panduan massal ke seluruh transaksi lunas secara asinkron
+// @Tags         admin
+// @Success      200 {object} utils.Response
+// @Failure      400 {object} utils.Response
+// @Router       /api/admin/transactions/blast-email [post]
+func (h *AdminHandler) BlastEmail(c *gin.Context) {
+	if err := h.trxService.SendBlastEmailToSettledTransactions(); err != nil {
+		utils.ErrorResult(c, http.StatusBadRequest, err.Error(), nil)
+		return
+	}
+
+	utils.SuccessResult(c, http.StatusOK, "Proses blast email panduan Hari-H berhasil.", nil)
+}

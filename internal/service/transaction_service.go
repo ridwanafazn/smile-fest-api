@@ -48,6 +48,7 @@ type TransactionService interface {
 	GetDashboardStats() (map[string]interface{}, error)
 	VerifyPayment(orderID, action string) error
 	GetTransactionInsights(page, limit int, search, voucherFilter, variantFilter string) ([]model.Transaction, utils.PaginationMeta, error)
+	SendBlastEmailToSettledTransactions() error
 }
 
 type transactionService struct {
@@ -272,4 +273,37 @@ func (s *transactionService) GetTransactionInsights(page, limit int, search, vou
 	}
 
 	return transactions, meta, nil
+}
+
+// SendBlastEmailToSettledTransactions menarik data lunas dan melemparnya ke worker secara asinkron
+func (s *transactionService) SendBlastEmailToSettledTransactions() error {
+	// 1. Tarik data email yang sudah dieliminasi gandanya dari repositori
+	transactions, err := s.trxRepo.GetSettledEmailsForBlast()
+	if err != nil {
+		return errors.New("gagal mengambil data transaksi lunas untuk blast email")
+	}
+
+	if len(transactions) == 0 {
+		return errors.New("tidak ada transaksi berstatus lunas yang ditemukan")
+	}
+
+	// 2. Iterasi data dan masukkan ke dalam antrean (channel) worker
+	for _, trx := range transactions {
+
+		// =========================================================================
+		targetEmail := trx.CustomerEmail
+		// =========================================================================
+		// targetEmail := "ridwanafzn@gmail.com"
+
+		// Kirim tugas ke dalam in-memory Message Queue tanpa memblokir perulangan
+		worker.EmailQueue <- worker.EmailTask{
+			Type:          worker.TaskBlast,
+			CustomerEmail: targetEmail,
+			BlastData: &utils.BlastData{
+				CustomerName: trx.CustomerName,
+			},
+		}
+	}
+
+	return nil
 }

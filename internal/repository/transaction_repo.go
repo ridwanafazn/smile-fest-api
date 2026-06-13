@@ -20,6 +20,8 @@ type TransactionRepository interface {
 
 	GetDashboardStats() (float64, int64, int64, int64, error)
 	VerifyAndProcessPayment(transaction *model.Transaction) error
+
+	GetSettledEmailsForBlast() ([]model.Transaction, error)
 }
 
 type transactionRepository struct {
@@ -175,4 +177,20 @@ func (r *transactionRepository) GetTransactionInsights(page, limit int, search, 
 		Find(&transactions).Error
 
 	return transactions, totalRecords, err
+}
+
+// GetSettledEmailsForBlast mengambil data unik email dan nama dari transaksi
+func (r *transactionRepository) GetSettledEmailsForBlast() ([]model.Transaction, error) {
+	var transactions []model.Transaction
+
+	// Menggunakan Raw Query dengan GROUP BY untuk memastikan 1 email hanya diambil 1 kali (mencegah email ganda).
+	// MAX(customer_name) digunakan agar kita tetap bisa menarik field nama meskipun sedang melakukan grouping email.
+	err := r.db.Raw(`
+        SELECT customer_email, MAX(customer_name) as customer_name 
+        FROM transactions 
+        WHERE status = ? 
+        GROUP BY customer_email
+    `, "settlement").Scan(&transactions).Error
+
+	return transactions, err
 }

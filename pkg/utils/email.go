@@ -20,7 +20,11 @@ type InstructionData struct {
 	CustomerName string
 	OrderID      string
 	TrackLink    string
-	TotalAmount  string // Format langsung dari handler, misal: "Rp 59.123"
+	TotalAmount  string
+}
+
+type BlastData struct {
+	CustomerName string
 }
 
 // SendInstructionEmail mengirimkan email instruksi pembayaran setelah checkout berhasil
@@ -82,6 +86,26 @@ func FormatRupiah(amount float64) string {
 	}
 
 	return string(result)
+}
+
+// SendBlastEmail bertugas mengirimkan email broadcast panduan Hari-H ke Google Apps Script
+func SendBlastEmail(toEmail string, data BlastData) error {
+	gasURL := os.Getenv("GAS_URL")
+
+	if gasURL == "" {
+		fmt.Println("⚠️ GAS_URL kosong, bypass pengiriman blast email ke:", toEmail)
+		return nil
+	}
+
+	// Payload minimalis: Konten surat, tombol, dan tanggal mutlak sudah dikunci statis di GAS
+	payload := map[string]string{
+		"action":       "sendBlast",
+		"to":           toEmail,
+		"subject":      "[PENTING] Panduan Peserta & Informasi Wajib SMILE FEST 2026",
+		"customerName": data.CustomerName,
+	}
+
+	return sendToGAS(gasURL, payload)
 }
 
 // sendToGAS adalah fungsi helper internal agar kita tidak menulis ulang logika HTTP POST

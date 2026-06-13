@@ -92,6 +92,7 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/ticket-variants/:id/toggle", ticketHandler.ToggleTicketVariant)
 
 		admin.GET("/transactions/insights", trxHandler.GetTransactionInsights)
+		admin.POST("/transactions/blast-email", adminHandler.BlastEmail)
 	}
 
 	scanner := r.Group("/api/scanner")

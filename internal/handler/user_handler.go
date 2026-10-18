@@ -138,25 +138,9 @@ func (h *UserHandler) DeleteUser(c *gin.Context) {
 	}
 
 	if err := h.userService.DeleteUser(targetID, currentUserID.(string)); err != nil {
-		utils.ErrorResult(c, http.StatusBadRequest, err.Error(), nil)
-		return
+			utils.ErrorResult(c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
+
+		utils.SuccessResult(c, http.StatusOK, "Akses user berhasil dicabut", nil)
 	}
-
-	utils.SuccessResult(c, http.StatusOK, "Akses user berhasil dicabut", nil)
-}
-
-// SeedAdmin godoc
-// @Summary      Seed First Admin
-// @Description  Temporer untuk membuat akun admin pertama
-// @Tags         auth
-// @Produce      json
-// @Success      200    {object}  utils.SuccessResponse
-// @Router       /api/seed-admin [post]
-func (h *UserHandler) SeedAdmin(c *gin.Context) {
-	if err := h.userService.SeedAdmin(); err != nil {
-		utils.ErrorResult(c, http.StatusInternalServerError, "Admin sudah ada atau gagal dibuat", err.Error())
-		return
-	}
-
-	utils.SuccessResult(c, http.StatusOK, "Admin berhasil dibuat! Silakan login dengan user: admin", nil)
-}

@@ -54,7 +54,6 @@ func SetupRouter() *gin.Engine {
 	})
 
 	r.POST("/api/login", userHandler.Login)
-	r.POST("/api/seed-admin", userHandler.SeedAdmin)
 	r.GET("/api/tickets/info", ticketHandler.GetTicketInfo)
 	r.GET("/api/tickets/track", ticketHandler.TrackTicket)
 	r.GET("/api/vouchers/validate", voucherHandler.ValidateVoucher)
@@ -92,7 +91,6 @@ func SetupRouter() *gin.Engine {
 		admin.PUT("/ticket-variants/:id/toggle", ticketHandler.ToggleTicketVariant)
 
 		admin.GET("/transactions/insights", trxHandler.GetTransactionInsights)
-		admin.POST("/transactions/blast-email", adminHandler.BlastEmail)
 	}
 
 	scanner := r.Group("/api/scanner")

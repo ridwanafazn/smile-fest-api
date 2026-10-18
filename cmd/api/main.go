@@ -6,7 +6,9 @@ import (
 
 	"github.com/joho/godotenv"
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
+	"github.com/ridwanafazn/smile-fest-api/internal/repository"
 	"github.com/ridwanafazn/smile-fest-api/internal/router"
+	"github.com/ridwanafazn/smile-fest-api/internal/service"
 	"github.com/ridwanafazn/smile-fest-api/internal/worker"
 	"github.com/ridwanafazn/smile-fest-api/pkg/midtrans"
 )
@@ -38,6 +40,9 @@ func main() {
 	config.ConnectDatabase()
 	config.ConnectRedis()
 
+	// Bootstrap admin awal dari env (AMAN: tanpa endpoint publik & tanpa password hardcoded)
+	bootstrapInitialAdmin()
+
 	// Inisialisasi Vendor
 	midtrans.InitMidtrans()
 
@@ -52,4 +57,27 @@ func main() {
 		port = "8080"
 	}
 	r.Run(":" + port)
+}
+
+// bootstrapInitialAdmin membuat akun admin pertama bila env
+// ADMIN_INIT_USERNAME & ADMIN_INIT_PASSWORD diisi dan username tsb
+// belum ada di database.
+func bootstrapInitialAdmin() {
+	username := os.Getenv("ADMIN_INIT_USERNAME")
+	password := os.Getenv("ADMIN_INIT_PASSWORD")
+	if username == "" || password == "" {
+		return // tidak wajib; lewati bila tidak dikonfigurasi
+	}
+
+	userRepo := repository.NewUserRepository(config.DB)
+	userService := service.NewUserService(userRepo)
+
+	created, err := userService.EnsureAdmin(username, password)
+	if err != nil {
+		log.Printf("❌ [BOOTSTRAP] Gagal membuat admin awal: %v", err)
+		return
+	}
+	if created {
+		log.Printf("✅ [BOOTSTRAP] Admin awal '%s' berhasil dibuat.", username)
+	}
 }

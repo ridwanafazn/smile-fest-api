@@ -31,7 +31,7 @@ type UserService interface {
 	GetAllUsers() ([]model.User, error)
 	DeleteUser(targetID string, currentUserID string) error
 	UpdateUser(id string, input UpdateUserInput) error
-	SeedAdmin() error
+	EnsureAdmin(username, password string) (bool, error)
 
 	GetTrashedUsers() ([]model.User, error)
 	RestoreUser(id string) error
@@ -112,14 +112,30 @@ func (s *userService) UpdateUser(id string, input UpdateUserInput) error {
 	return s.userRepo.Update(id, updateData)
 }
 
-func (s *userService) SeedAdmin() error {
-	hashedPassword, _ := utils.HashPassword("ringkaibinar")
+func (s *userService) EnsureAdmin(username, password string) (bool, error) {
+	if username == "" || password == "" {
+		return false, errors.New("ADMIN_INIT_USERNAME dan ADMIN_INIT_PASSWORD wajib diisi")
+	}
+
+	// Jika admin (atau username tsb) sudah ada, jangan dibuat ulang.
+	if _, err := s.userRepo.FindByUsername(username); err == nil {
+		return false, nil
+	}
+
+	hashedPassword, err := utils.HashPassword(password)
+	if err != nil {
+		return false, errors.New("gagal memproses kata sandi")
+	}
+
 	admin := model.User{
-		Username: "admin",
+		Username: username,
 		Password: hashedPassword,
 		Role:     "admin",
 	}
-	return s.userRepo.Create(&admin)
+	if err := s.userRepo.Create(&admin); err != nil {
+		return false, errors.New("gagal membuat admin awal")
+	}
+	return true, nil
 }
 
 func (s *userService) GetTrashedUsers() ([]model.User, error) {

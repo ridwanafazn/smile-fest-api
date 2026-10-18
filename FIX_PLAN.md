@@ -134,20 +134,20 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
 
 ---
 
-### Phase 5: Technical Debt, Privacy & Resilience (T4, T5, T6, T9, T10, T11, T12)
-- **Task 5.1**: Cloudinary Image Compression & Upload Validation (T4 + User Request)
+### ✅ Phase 5: Technical Debt, Privacy & Resilience (T4, T5, T6, T9, T10, T11, T12) — DONE
+- **✅ Task 5.1**: Cloudinary Image Compression & Upload Validation (T4 + User Request)
   - Files:
     - `internal/handler/transaction_handler.go` (validate max size e.g. 5MB, inspect MIME type header `image/jpeg, image/png, image/webp`, return HTTP 400 Bad Request on failure instead of 500)
     - `pkg/cloudinary/client.go` (add URL transformation params: `f_auto,q_auto,w_1000,c_limit` or append Cloudinary transformation path so image delivery is automatically compressed)
   - Verification: Upload sample image; verify returned URL contains optimization parameters.
 
-- **Task 5.2**: Privacy Protection on Public Tracking Endpoint (T11)
+- **✅ Task 5.2**: Privacy Protection on Public Tracking Endpoint (T11)
   - Files:
     - `internal/model/models.go` or `internal/handler/ticket_handler.go`
     - Create a sanitized DTO `TrackTicketResponse` that omits `ProfileAge`, `ProfileCity`, `ProfileEducation`, `ProfileJob`, `InterestReasons`, `SustainabilitySteps`, etc.
   - Verification: Call `GET /api/tickets/track` with order_id and email; verify demographic survey fields are excluded.
 
-- **Task 5.3**: Worker Queue Resilience & Graceful Shutdown (T5, T6)
+- **✅ Task 5.3**: Worker Queue Resilience & Graceful Shutdown (T5, T6)
   - Files:
     - `internal/worker/email_worker.go`
     - `cmd/api/main.go`
@@ -155,12 +155,12 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
     - Support graceful shutdown using `context.Context` to flush in-flight jobs.
     - If Redis is available, persist failed or pending jobs into a Redis queue/list; fallback to in-memory channel with logged warnings if Redis is down.
 
-- **Task 5.4**: Rate Limiter Middleware for Public Endpoints (T12)
+- **✅ Task 5.4**: Rate Limiter Middleware for Public Endpoints (T12)
   - Files:
     - `internal/middleware/rate_limit.go` (IP-based token bucket using Redis if connected, or memory cache fallback)
     - `internal/router/router.go` (apply to `/api/checkout` and `/api/transactions/:id/upload-proof`)
 
-- **Task 5.5**: Clean Database Boot & Documentation (T9, T10)
+- **✅ Task 5.5**: Clean Database Boot & Documentation (T9, T10)
   - Files:
     - `internal/config/database.go` (wrap AutoMigrate with environment check `APP_ENV != "production"` or dedicated migration flag)
     - `.env.example` (add all required & optional env vars: `PORT`, `DB_URL`, `JWT_SECRET`, `REDIS_URL`, `CLOUDINARY_URL`, `GAS_URL`, `GIN_MODE`, `APP_ENV`)

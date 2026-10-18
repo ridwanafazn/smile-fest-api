@@ -1,11 +1,13 @@
 package handler
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
 	"github.com/ridwanafazn/smile-fest-api/internal/service"
+	"github.com/ridwanafazn/smile-fest-api/pkg/terrors"
 	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
 )
 
@@ -27,8 +29,8 @@ func (h *TransactionHandler) Checkout(c *gin.Context) {
 
 	transaction, err := h.trxService.Checkout(input)
 	if err != nil {
-		// Menangani Edge Case State-Based 409 Anti-Duplicate
-		if err.Error() == "PENDING_TRANSACTION_EXISTS" {
+		// Menangani Edge Case State-Based 409 Anti-Duplicate (T2: pakai errors.Is).
+		if errors.Is(err, terrors.ErrPendingTransactionExists) && transaction != nil {
 			utils.ErrorResult(c, http.StatusConflict, "Kamu masih memiliki pesanan yang belum diselesaikan.", gin.H{
 				"order_id": transaction.ID,
 				"status":   transaction.Status,

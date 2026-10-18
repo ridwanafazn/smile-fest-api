@@ -10,11 +10,19 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 	"github.com/ridwanafazn/smile-fest-api/internal/repository"
 	"github.com/ridwanafazn/smile-fest-api/internal/worker"
 	"github.com/ridwanafazn/smile-fest-api/pkg/cloudinary"
+	"github.com/ridwanafazn/smile-fest-api/pkg/terrors"
 	"github.com/ridwanafazn/smile-fest-api/pkg/utils"
+)
+
+// Konstanta kuota tiket global.
+const (
+	maxTotalTickets   = 600
+	batchTwoThreshold = 300
 )
 
 type Attendee struct {
@@ -62,7 +70,7 @@ func NewTransactionService(trxRepo repository.TransactionRepository, ticketRepo 
 
 func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, error) {
 	if existingOrder, err := s.trxRepo.FindPendingByEmail(input.CustomerEmail); err == nil {
-		return existingOrder, errors.New("PENDING_TRANSACTION_EXISTS")
+		return existingOrder, terrors.ErrPendingTransactionExists
 	}
 
 	ticketVariant, err := s.ticketRepo.FindVariantByID(input.TicketType)
@@ -72,12 +80,14 @@ func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, 
 
 	qty := len(input.Attendees)
 
-	currentActiveTickets, _ := s.trxRepo.CountActiveTickets()
-	if currentActiveTickets+int64(qty) > 600 {
-		return nil, errors.New("mohon maaf, kuota total tiket sudah habis")
+	// T8: tangani error (dipakai utk menentukan session batch saja; cek kuota
+	// otoritatif + atomik dilakukan di CreateWithTicketsAndQuota).
+	currentActiveTickets, err := s.trxRepo.CountActiveTickets()
+	if err != nil {
+		currentActiveTickets = 0
 	}
 	sessionBatch := 1
-	if currentActiveTickets >= 300 {
+	if currentActiveTickets >= batchTwoThreshold {
 		sessionBatch = 2
 	}
 
@@ -90,8 +100,12 @@ func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, 
 		if err != nil || !voucher.IsActive {
 			return nil, errors.New("voucher tidak valid atau tidak aktif")
 		}
-		if (voucher.Quota - voucher.UsageCount) < qty {
-			return nil, fmt.Errorf("sisa kuota voucher tidak cukup untuk %d tiket", qty)
+		// B5: reservasi kuota voucher secara atomik dengan guard kuota.
+		if err := s.voucherRepo.Reserve(voucher.ID, qty); err != nil {
+			if errors.Is(err, terrors.ErrVoucherQuotaExceeded) {
+				return nil, fmt.Errorf("sisa kuota voucher tidak cukup untuk %d tiket", qty)
+			}
+			return nil, errors.New("gagal memproses voucher")
 		}
 		discount = voucher.DiscountAmount * float64(qty)
 		voucherID = &voucher.ID
@@ -101,7 +115,8 @@ func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, 
 	finalPrice := math.Max(basePrice-discount, 0)
 	totalTransfer := finalPrice + float64(uniqueCode)
 
-	orderID := fmt.Sprintf("SMILE-%d", time.Now().Unix())
+	// B3: order ID anti-collision (timestamp + UUID hex).
+	orderID := fmt.Sprintf("SMILE-%s%s", time.Now().Format("060102150405"), strings.ToUpper(uuid.New().String()[:6]))
 
 	transaction := model.Transaction{
 		ID:                   orderID,
@@ -119,6 +134,8 @@ func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, 
 		SustainabilitySteps:  strings.Join(input.SustainabilitySteps, ", "),
 		ContributionRole:     input.ContributionRole,
 		TotalAmount:          totalTransfer,
+		BaseAmount:           basePrice,
+		DiscountAmount:       discount,
 		UniqueCode:           uniqueCode,
 		SessionBatch:         sessionBatch,
 		ExpiresAt:            time.Now().Add(24 * time.Hour),
@@ -135,7 +152,15 @@ func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, 
 		})
 	}
 
-	if err := s.trxRepo.CreateWithTickets(&transaction, tickets); err != nil {
+	if err := s.trxRepo.CreateWithTicketsAndQuota(&transaction, tickets, maxTotalTickets); err != nil {
+		// B5: bila penciptaan gagal karena kuota tiket habis, lepaskan
+		// reservasi voucher yang tadi di-reserve agar tidak bocor.
+		if voucherID != nil {
+			_ = s.voucherRepo.Release(*voucherID, qty)
+		}
+		if errors.Is(err, terrors.ErrTicketQuotaExceeded) {
+			return nil, errors.New("mohon maaf, kuota total tiket sudah habis")
+		}
 		return nil, errors.New("gagal membuat transaksi di database")
 	}
 
@@ -165,7 +190,18 @@ func (s *transactionService) CancelTransaction(orderID string) error {
 	}
 
 	transaction.Status = "cancel"
-	return s.trxRepo.Update(transaction)
+	if err := s.trxRepo.Update(transaction); err != nil {
+		return errors.New("gagal membatalkan transaksi")
+	}
+
+	// B5: lepaskan reservasi kuota voucher.
+	if transaction.VoucherID != nil {
+		qty, _ := s.trxRepo.CountTicketsByTransactionID(orderID)
+		if qty > 0 {
+			_ = s.voucherRepo.Release(*transaction.VoucherID, int(qty))
+		}
+	}
+	return nil
 }
 
 func (s *transactionService) UploadProof(ctx context.Context, orderID string, file multipart.File) (string, string, error) {
@@ -235,7 +271,17 @@ func (s *transactionService) VerifyPayment(orderID, action string) error {
 
 	if action == "reject" {
 		transaction.Status = "cancel"
-		return s.trxRepo.Update(transaction)
+		if err := s.trxRepo.Update(transaction); err != nil {
+			return errors.New("gagal menolak pembayaran")
+		}
+		// B5: lepaskan reservasi kuota voucher.
+		if transaction.VoucherID != nil {
+			qty, _ := s.trxRepo.CountTicketsByTransactionID(orderID)
+			if qty > 0 {
+				_ = s.voucherRepo.Release(*transaction.VoucherID, int(qty))
+			}
+		}
+		return nil
 	}
 
 	if err := s.trxRepo.VerifyAndProcessPayment(transaction); err != nil {

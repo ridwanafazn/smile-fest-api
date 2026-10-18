@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
+	"time"
 
 	"github.com/joho/godotenv"
 	"github.com/ridwanafazn/smile-fest-api/internal/config"
@@ -48,6 +50,10 @@ func main() {
 
 	// Menyalakan Mesin Consumer Event-Driven di Background
 	go worker.StartEmailWorker()
+
+	// Menyalakan Sweeper penutupan transaksi pending yang kedaluwarsa
+	trxRepo := repository.NewTransactionRepository(config.DB)
+	go worker.StartOrderSweeper(context.Background(), trxRepo, 10*time.Minute)
 
 	// Menyalakan Router HTTP
 	r := router.SetupRouter()

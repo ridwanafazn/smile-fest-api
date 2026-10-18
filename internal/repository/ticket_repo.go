@@ -106,7 +106,9 @@ func (r *ticketRepository) GetScannerStats() (int64, int64, error) {
 		return 0, 0, err
 	}
 
-	err = r.db.Model(&model.Ticket{}).Where("is_scanned = ?", true).Count(&scannedTickets).Error
+	err = r.db.Model(&model.Ticket{}).
+		Joins("JOIN transactions ON transactions.id = tickets.transaction_id").
+		Where("is_scanned = ? AND transactions.status = ?", true, "settlement").Count(&scannedTickets).Error
 	if err != nil {
 		return 0, 0, err
 	}

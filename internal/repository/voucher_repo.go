@@ -2,6 +2,7 @@ package repository
 
 import (
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
+	"github.com/ridwanafazn/smile-fest-api/pkg/terrors"
 	"gorm.io/gorm"
 )
 
@@ -12,6 +13,8 @@ type VoucherRepository interface {
 	FindByCode(code string) (*model.Voucher, error)
 	Update(voucher *model.Voucher) error
 	Delete(voucher *model.Voucher) error
+	Reserve(id uint, qty int) error
+	Release(id uint, qty int) error
 }
 
 type voucherRepository struct {
@@ -56,4 +59,26 @@ func (r *voucherRepository) Update(voucher *model.Voucher) error {
 
 func (r *voucherRepository) Delete(voucher *model.Voucher) error {
 	return r.db.Delete(voucher).Error
+}
+
+// Reserve menaikkan usage_count secara atomik dengan guard kuota:
+// hanya berhasil bila (quota - usage_count) >= qty. Mengembalikan
+// terrors.ErrVoucherQuotaExceeded bila kuota tidak cukup.
+func (r *voucherRepository) Reserve(id uint, qty int) error {
+	res := r.db.Model(&model.Voucher{}).
+		Where("id = ? AND is_active = ? AND (quota - usage_count) >= ?", id, true, qty).
+		UpdateColumn("usage_count", gorm.Expr("usage_count + ?", qty))
+	if res.Error != nil {
+		return res.Error
+	}
+	if res.RowsAffected == 0 {
+		return terrors.ErrVoucherQuotaExceeded
+	}
+	return nil
+}
+
+// Release menurunkan usage_count saat transaksi dibatalkan / kedaluwarsa.
+func (r *voucherRepository) Release(id uint, qty int) error {
+	return r.db.Model(&model.Voucher{}).Where("id = ?", id).
+		UpdateColumn("usage_count", gorm.Expr("GREATEST(usage_count - ?, 0)", qty)).Error
 }

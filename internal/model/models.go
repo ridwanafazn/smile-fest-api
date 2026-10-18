@@ -50,11 +50,13 @@ type Transaction struct {
 	ContributionRole string `json:"contribution_role"` // Donatur, Relawan, Update Info, Peserta Saja
 
 	// --- MANUAL PAYMENT SYSTEM ---
-	TotalAmount     float64   `gorm:"not null" json:"total_amount"`            // Total asli + Kode Unik
-	UniqueCode      int       `gorm:"not null" json:"unique_code"`             // 3 Digit Angka Unik
-	SessionBatch    int       `gorm:"not null;default:1" json:"session_batch"` // 1 (Pagi) atau 2 (Siang)
-	PaymentProofURL string    `json:"payment_proof_url"`                       // URL Gambar dari Cloudinary
-	ExpiresAt       time.Time `json:"expires_at"`                              // Batas waktu transfer 24 Jam
+	TotalAmount     float64   `gorm:"not null" json:"total_amount"`              // Total asli + Kode Unik
+	BaseAmount      float64   `gorm:"not null;default:0" json:"base_amount"`     // Harga tiket sebelum diskon
+	DiscountAmount  float64   `gorm:"not null;default:0" json:"discount_amount"` // Total diskon voucher
+	UniqueCode      int       `gorm:"not null" json:"unique_code"`               // 3 Digit Angka Unik
+	SessionBatch    int       `gorm:"not null;default:1" json:"session_batch"`   // 1 (Pagi) atau 2 (Siang)
+	PaymentProofURL string    `json:"payment_proof_url"`                         // URL Gambar dari Cloudinary
+	ExpiresAt       time.Time `json:"expires_at"`                                // Batas waktu transfer 24 Jam
 
 	// Status: 'pending', 'waiting_verification', 'settlement', 'cancel', 'expired'
 	Status    string   `gorm:"default:'pending'" json:"status"`

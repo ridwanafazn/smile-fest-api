@@ -40,20 +40,20 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
 
 ## Step-by-Step Implementation Tasks
 
-### Phase 1: Removal of Legacy Blast Email (B8)
-- **Task 1.1**: Remove Blast Email from Router & Handler
+### ✅ Phase 1: Removal of Legacy Blast Email (B8) — DONE
+- **✅ Task 1.1**: Remove Blast Email from Router & Handler
   - Files:
     - `internal/router/router.go` (remove `admin.POST("/transactions/blast-email", adminHandler.BlastEmail)`)
     - `internal/handler/admin_handler.go` (remove `BlastEmail` method)
   - Verification: `go build ./...` passes.
 
-- **Task 1.2**: Remove Blast Email from Service & Repository
+- **✅ Task 1.2**: Remove Blast Email from Service & Repository
   - Files:
     - `internal/service/transaction_service.go` (remove `SendBlastEmailToSettledTransactions` from interface and struct)
     - `internal/repository/transaction_repo.go` (remove `GetSettledEmailsForBlast` from interface and struct)
   - Verification: `go build ./...` passes.
 
-- **Task 1.3**: Remove Blast Email from Worker & Utils
+- **✅ Task 1.3**: Remove Blast Email from Worker & Utils
   - Files:
     - `internal/worker/email_worker.go` (remove `TaskBlast`, `BlastData`, and switch case)
     - `pkg/utils/email.go` (remove `SendBlastEmail` and `BlastData` struct)
@@ -61,8 +61,8 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
 
 ---
 
-### Phase 2: Security & Authentication Hardening (B1, T1, T3)
-- **Task 2.1**: Remove Public Seed Admin & Hardcoded Password (B1, T1)
+### ✅ Phase 2: Security & Authentication Hardening (B1, T1, T3) — DONE
+- **✅ Task 2.1**: Remove Public Seed Admin & Hardcoded Password (B1, T1)
   - Files:
     - `internal/router/router.go` (delete `/api/seed-admin` route)
     - `internal/handler/user_handler.go` (delete `SeedAdmin` handler method)
@@ -70,7 +70,7 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
     - `cmd/seed/main.go` (optional standalone CLI tool if admin seeding is required via env var, or check if admin exists on boot via secure ENV vars `ADMIN_INIT_USERNAME` & `ADMIN_INIT_PASSWORD` with bcrypt hash).
   - Verification: Run `curl -X POST http://localhost:8080/api/seed-admin` returning 404 Not Found.
 
-- **Task 2.2**: Secure JWT Validation & Safe Claim Parsing (T3)
+- **✅ Task 2.2**: Secure JWT Validation & Safe Claim Parsing (T3)
   - Files:
     - `internal/middleware/auth.go`
   - Implementation:
@@ -81,18 +81,18 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
 
 ---
 
-### Phase 3: Transaction Concurrency, Quota & Order ID (B3, B4, B5, T2)
-- **Task 3.1**: Standardize Custom Errors (T2)
+### ✅ Phase 3: Transaction Concurrency, Quota & Order ID (B3, B4, B5, T2) — DONE
+- **✅ Task 3.1**: Standardize Custom Errors (T2)
   - File: `internal/service/errors.go` (or `pkg/apperror/errors.go`)
   - Define `ErrPendingTransactionExists = errors.New("pending transaction exists")`, `ErrTicketQuotaExceeded`, `ErrVoucherInvalidOrExhausted`, etc.
   - Update `internal/handler/transaction_handler.go` to check using `errors.Is(err, service.ErrPendingTransactionExists)` instead of comparing raw error strings.
 
-- **Task 3.2**: Collision-Resistant Order ID (B3)
+- **✅ Task 3.2**: Collision-Resistant Order ID (B3)
   - File: `internal/service/transaction_service.go`
   - Implementation: Format order ID using timestamp millisecond/nanosecond + cryptographically random hex, e.g., `fmt.Sprintf("SMILE-%s-%s", time.Now().Format("0601021504"), strings.ToUpper(uuid.New().String()[:6]))`.
   - Verification: Write concurrency unit test generating 1,000 Order IDs in parallel; assert 0 duplicates.
 
-- **Task 3.3**: Atomic Ticket Quota Check & Reservation (B4, T8)
+- **✅ Task 3.3**: Atomic Ticket Quota Check & Reservation (B4, T8)
   - Files:
     - `internal/repository/transaction_repo.go`
     - `internal/service/transaction_service.go`
@@ -100,7 +100,7 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
     - Wrap checkout check and creation inside an explicit DB transaction with row-level locking or check ticket count inside `tx.Raw(...)` with `FOR UPDATE` or conditional insert.
     - Fix T8 by properly handling the returned `error` from `CountActiveTickets()` instead of discarding with `_`.
 
-- **Task 3.4**: Atomic Voucher Quota Reservation (B5)
+- **✅ Task 3.4**: Atomic Voucher Quota Reservation (B5)
   - Files:
     - `internal/repository/voucher_repo.go`
     - `internal/service/transaction_service.go`
@@ -111,21 +111,21 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
 
 ---
 
-### Phase 4: Order Expiry Sweeper & Financial Integrity (B2, B6, B7)
-- **Task 4.1**: Stale Order Sweeper Worker (B2)
+### ✅ Phase 4: Order Expiry Sweeper & Financial Integrity (B2, B6, B7) — DONE
+- **✅ Task 4.1**: Stale Order Sweeper Worker (B2)
   - Files:
     - `internal/repository/transaction_repo.go` (add `ExpireStaleTransactions() (int64, error)`)
     - `internal/worker/sweeper_worker.go` (new background routine running every 5-10 minutes with `time.Ticker`, updating `status = 'expired'` where `status = 'pending' AND expires_at < NOW()`)
     - `cmd/api/main.go` (launch `go worker.StartOrderSweeper(ctx, trxRepo)`)
   - Verification: Insert pending transaction with past `expires_at`, trigger sweeper, confirm status updates to `expired` and released tickets don't block new checkouts.
 
-- **Task 4.2**: Financial Disaggregation & Revenue Calculation (B6)
+- **✅ Task 4.2**: Financial Disaggregation & Revenue Calculation (B6)
   - Files:
     - `internal/model/models.go` (add `BaseAmount float64`, `DiscountAmount float64` to `Transaction`)
     - `internal/service/transaction_service.go` (save `base_amount` and `discount_amount` explicitly during checkout)
     - `internal/repository/transaction_repo.go` (`GetDashboardStats` calculates actual ticket revenue via `SUM(base_amount - discount_amount)` rather than including random `unique_code`).
 
-- **Task 4.3**: Fix Scanned Ticket Metric Accuracy (B7)
+- **✅ Task 4.3**: Fix Scanned Ticket Metric Accuracy (B7)
   - Files:
     - `internal/repository/transaction_repo.go`
     - `internal/repository/ticket_repo.go`

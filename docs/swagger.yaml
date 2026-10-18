@@ -491,19 +491,6 @@ paths:
       summary: Validate Ticket
       tags:
       - scanner
-  /api/seed-admin:
-    post:
-      description: Temporer untuk membuat akun admin pertama
-      produces:
-      - application/json
-      responses:
-        "200":
-          description: OK
-          schema:
-            $ref: '#/definitions/utils.SuccessResponse'
-      summary: Seed First Admin
-      tags:
-      - auth
   /api/tickets/info:
     get:
       description: Mengambil data harga dan tipe tiket yang sedang aktif untuk publik.

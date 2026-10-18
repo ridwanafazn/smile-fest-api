@@ -638,26 +638,6 @@ const docTemplate = `{
                 }
             }
         },
-        "/api/seed-admin": {
-            "post": {
-                "description": "Temporer untuk membuat akun admin pertama",
-                "produces": [
-                    "application/json"
-                ],
-                "tags": [
-                    "auth"
-                ],
-                "summary": "Seed First Admin",
-                "responses": {
-                    "200": {
-                        "description": "OK",
-                        "schema": {
-                            "$ref": "#/definitions/utils.SuccessResponse"
-                        }
-                    }
-                }
-            }
-        },
         "/api/tickets/info": {
             "get": {
                 "description": "Mengambil data harga dan tipe tiket yang sedang aktif untuk publik.",

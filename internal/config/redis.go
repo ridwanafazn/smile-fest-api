@@ -24,10 +24,12 @@ func ConnectRedis() {
 
 	client := redis.NewClient(opt)
 
-	// Uji koneksi dengan Ping
+	// Uji koneksi dengan Ping. Redis hanya cache opsional: kalau gagal,
+	// lanjutkan jalan (RedisClient tetap nil) agar app tidak mati total.
 	ctx := context.Background()
 	if err := client.Ping(ctx).Err(); err != nil {
-		log.Fatalf("❌ [REDIS] Gagal terhubung ke server Redis: %v", err)
+		log.Printf("⚠️ [REDIS] Gagal terhubung ke server Redis, caching dinonaktifkan: %v", err)
+		return
 	}
 
 	log.Println("✅ [REDIS] Terhubung ke Redis Upstash!")

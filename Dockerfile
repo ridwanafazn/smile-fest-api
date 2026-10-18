@@ -11,6 +11,6 @@ FROM alpine:3.19
 RUN apk --no-cache add ca-certificates
 WORKDIR /root/
 COPY --from=builder /app/main .
-# Pastikan port sesuai dengan yang kamu pakai di main.go
+
 EXPOSE 8080 
 CMD ["./main"]

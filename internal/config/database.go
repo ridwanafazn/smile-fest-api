@@ -23,11 +23,14 @@ func ConnectDatabase() {
 	// database.Migrator().DropTable(&model.User{})
 	// --------------------------
 
-	err = database.AutoMigrate(&model.User{}, &model.Voucher{}, &model.TicketVariant{}, &model.Transaction{}, &model.Ticket{})
-	if err != nil {
-		log.Fatal("Gagal migrasi database:", err)
+	// AutoMigrate berjalan secara default; nonaktifkan di produksi dengan
+	// DB_AUTO_MIGRATE=false bila migrasi dikelola secara manual (T9).
+	if os.Getenv("DB_AUTO_MIGRATE") != "false" {
+		err = database.AutoMigrate(&model.User{}, &model.Voucher{}, &model.TicketVariant{}, &model.Transaction{}, &model.Ticket{})
+		if err != nil {
+			log.Fatal("Gagal migrasi database:", err)
+		}
+		fmt.Println("Database berhasil terkoneksi dan bermigrasi!")
 	}
-
-	fmt.Println("Database berhasil terkoneksi dan bermigrasi!")
 	DB = database
 }

@@ -3,7 +3,10 @@ package main
 import (
 	"context"
 	"log"
+	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/joho/godotenv"
@@ -48,8 +51,13 @@ func main() {
 	// Inisialisasi Vendor
 	midtrans.InitMidtrans()
 
-	// Menyalakan Mesin Consumer Event-Driven di Background
-	go worker.StartEmailWorker()
+	// Menyalakan Mesin Consumer Event-Driven di Background.
+	// emailDone menandakan semua konsumen selesai (saat EmailQueue ditutup pada shutdown).
+	emailDone := make(chan struct{})
+	go func() {
+		worker.StartEmailWorker()
+		close(emailDone)
+	}()
 
 	// Menyalakan Sweeper penutupan transaksi pending yang kedaluwarsa
 	trxRepo := repository.NewTransactionRepository(config.DB)
@@ -62,7 +70,35 @@ func main() {
 	if port == "" {
 		port = "8080"
 	}
-	r.Run(":" + port)
+
+	server := &http.Server{Addr: ":" + port, Handler: r}
+	go func() {
+		log.Printf("🚀 [HTTP] Listening and serving HTTP on :%s", port)
+		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Fatalf("❌ [HTTP] Server error: %v", err)
+		}
+	}()
+
+	// T6: graceful shutdown — menunggu sinyal berhenti, menutup HTTP,
+	// lalu membiarkan email worker menyelesaikan task yang sedang diproses.
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	log.Println("🛑 Menerima sinyal berhenti, menutup server...")
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	if err := server.Shutdown(ctx); err != nil {
+		log.Printf("⚠️ [HTTP] Gagal shutdown dengan bersih: %v", err)
+	}
+
+	close(worker.EmailQueue)
+	select {
+	case <-emailDone:
+		log.Println("✅ [WORKER] Email worker selesai memproses antrian.")
+	case <-time.After(15 * time.Second):
+		log.Println("⚠️ [WORKER] Email worker tidak selesai dalam 15 detik.")
+	}
 }
 
 // bootstrapInitialAdmin membuat akun admin pertama bila env

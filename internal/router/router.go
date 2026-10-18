@@ -57,8 +57,8 @@ func SetupRouter() *gin.Engine {
 	r.GET("/api/tickets/info", ticketHandler.GetTicketInfo)
 	r.GET("/api/tickets/track", ticketHandler.TrackTicket)
 	r.GET("/api/vouchers/validate", voucherHandler.ValidateVoucher)
-	r.POST("/api/checkout", trxHandler.Checkout)
-	r.POST("/api/transactions/:id/upload-proof", trxHandler.UploadProof)
+	r.POST("/api/checkout", middleware.RateLimit(5, 10), trxHandler.Checkout)
+	r.POST("/api/transactions/:id/upload-proof", middleware.RateLimit(5, 10), trxHandler.UploadProof)
 	r.PUT("/api/transactions/:id/cancel", trxHandler.CancelTransaction)
 
 	admin := r.Group("/api/admin")

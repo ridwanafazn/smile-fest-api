@@ -70,6 +70,22 @@ func (h *TransactionHandler) UploadProof(c *gin.Context) {
 		return
 	}
 
+	// T4: validasi ukuran & tipe gambar sebelum diproses.
+	const maxUploadSize = 5 << 20 // 5 MB
+	if fileHeader.Size > maxUploadSize {
+		utils.ErrorResult(c, http.StatusBadRequest, "Ukuran file maksimal 5 MB", nil)
+		return
+	}
+	allowedTypes := map[string]bool{
+		"image/jpeg": true,
+		"image/png":  true,
+		"image/webp": true,
+	}
+	if !allowedTypes[fileHeader.Header.Get("Content-Type")] {
+		utils.ErrorResult(c, http.StatusBadRequest, "File harus berupa gambar (JPEG/PNG/WEBP)", nil)
+		return
+	}
+
 	file, err := fileHeader.Open()
 	if err != nil {
 		utils.ErrorResult(c, http.StatusInternalServerError, "Gagal membaca file", nil)
@@ -79,6 +95,10 @@ func (h *TransactionHandler) UploadProof(c *gin.Context) {
 
 	imageURL, status, err := h.trxService.UploadProof(c.Request.Context(), orderID, file)
 	if err != nil {
+		if err.Error() == "transaksi tidak dapat diunggah ulang" {
+			utils.ErrorResult(c, http.StatusBadRequest, err.Error(), nil)
+			return
+		}
 		utils.ErrorResult(c, http.StatusInternalServerError, err.Error(), nil)
 		return
 	}

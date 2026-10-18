@@ -25,7 +25,7 @@ type TicketVariantInput struct {
 
 type TicketService interface {
 	GetActiveTicketVariants() ([]model.TicketVariant, error)
-	TrackTicket(orderID, email string) (*model.Transaction, error)
+	TrackTicket(orderID, email string) (*TrackTicketResponse, error)
 
 	GetAllAdminVariants() ([]model.TicketVariant, error)
 	CreateVariant(input TicketVariantInput) (*model.TicketVariant, error)
@@ -44,6 +44,30 @@ type ticketService struct {
 
 func NewTicketService(ticketRepo repository.TicketRepository) TicketService {
 	return &ticketService{ticketRepo}
+}
+
+// TrackTicketResponse adalah representasi publik pada endpoint tracking.
+// Sengaja TIDAK memuat data profil/demografi sensitif (umur, kota, pekerjaan,
+// minat, afiliasi komunitas, dll) — T11.
+type TrackTicketResponse struct {
+	OrderID         string             `json:"order_id"`
+	CustomerName    string             `json:"customer_name"`
+	Status          string             `json:"status"`
+	TotalAmount     float64            `json:"total_amount"`
+	BaseAmount      float64            `json:"base_amount"`
+	DiscountAmount  float64            `json:"discount_amount"`
+	UniqueCode      int                `json:"unique_code"`
+	SessionBatch    int                `json:"session_batch"`
+	PaymentProofURL string             `json:"payment_proof_url,omitempty"`
+	ExpiresAt       time.Time          `json:"expires_at"`
+	CreatedAt       time.Time          `json:"created_at"`
+	Tickets         []TicketPublicItem `json:"tickets"`
+}
+
+type TicketPublicItem struct {
+	ID           string `json:"id"`
+	AttendeeName string `json:"attendee_name"`
+	IsScanned    bool   `json:"is_scanned"`
 }
 
 // Helper Internal untuk Invalidasi Cache
@@ -85,12 +109,35 @@ func (s *ticketService) GetActiveTicketVariants() ([]model.TicketVariant, error)
 	return variants, nil
 }
 
-func (s *ticketService) TrackTicket(orderID, email string) (*model.Transaction, error) {
-	transaction, err := s.ticketRepo.FindTransactionByOrderAndEmail(orderID, email)
+func (s *ticketService) TrackTicket(orderID, email string) (*TrackTicketResponse, error) {
+	t, err := s.ticketRepo.FindTransactionByOrderAndEmail(orderID, email)
 	if err != nil {
 		return nil, errors.New("data tidak ditemukan. pastikan order id dan email benar")
 	}
-	return transaction, nil
+
+	tickets := make([]TicketPublicItem, 0, len(t.Tickets))
+	for _, tk := range t.Tickets {
+		tickets = append(tickets, TicketPublicItem{
+			ID:           tk.ID.String(),
+			AttendeeName: tk.AttendeeName,
+			IsScanned:    tk.IsScanned,
+		})
+	}
+
+	return &TrackTicketResponse{
+		OrderID:         t.ID,
+		CustomerName:    t.CustomerName,
+		Status:          t.Status,
+		TotalAmount:     t.TotalAmount,
+		BaseAmount:      t.BaseAmount,
+		DiscountAmount:  t.DiscountAmount,
+		UniqueCode:      t.UniqueCode,
+		SessionBatch:    t.SessionBatch,
+		PaymentProofURL: t.PaymentProofURL,
+		ExpiresAt:       t.ExpiresAt,
+		CreatedAt:       t.CreatedAt,
+		Tickets:         tickets,
+	}, nil
 }
 
 func (s *ticketService) GetAllAdminVariants() ([]model.TicketVariant, error) {

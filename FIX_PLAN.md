@@ -167,8 +167,8 @@ Resolve all business vulnerabilities (B1-B7), remove the legacy blast-email syst
 
 ---
 
-### Phase 6: Automated Testing Suite (T7)
-- **Task 6.1**: Setup Test Suite & Mocks / Test DB
+### ✅ Phase 6: Automated Testing Suite (T7) — DONE
+- **✅ Task 6.1**: Setup Test Suite & Mocks / Test DB
   - Files:
     - `internal/service/transaction_service_test.go`
     - `internal/handler/ticket_handler_test.go`

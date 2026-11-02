@@ -18,6 +18,10 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/pkg/midtrans"
 )
 
+var (
+	emailWorker *worker.RedisEmailWorker
+)
+
 // @title          SMILE FEST API
 // @version        1.0
 // @description    API Documentation for SMILE FEST 2026 Ticketing System.
@@ -30,7 +34,6 @@ import (
 // @license.name  Apache 2.0
 // @license.url   http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host      localhost:8080
 // @BasePath  /
 
 // @securityDefinitions.apikey BearerAuth
@@ -51,20 +54,24 @@ func main() {
 	// Inisialisasi Vendor
 	midtrans.InitMidtrans()
 
-	// Menyalakan Mesin Consumer Event-Driven di Background.
-	// emailDone menandakan semua konsumen selesai (saat EmailQueue ditutup pada shutdown).
-	emailDone := make(chan struct{})
-	go func() {
-		worker.StartEmailWorker()
-		close(emailDone)
-	}()
+	// Menyalakan Redis-based Email Worker dengan durability & retry
+	emailWorker = worker.NewRedisEmailWorker(3)
+	if err := emailWorker.Start(); err != nil {
+		log.Printf("⚠️ [EMAIL WORKER] Redis tidak tersedia, fallback ke in-memory queue: %v", err)
+		// Fallback ke in-memory worker lama
+		go worker.StartEmailWorker()
+	} else {
+		// Start delayed retry processor
+		emailWorker.StartDelayedRetryProcessor()
+		log.Println("✅ [EMAIL WORKER] Redis Streams worker started with durability & retry")
+	}
 
 	// Menyalakan Sweeper penutupan transaksi pending yang kedaluwarsa
 	trxRepo := repository.NewTransactionRepository(config.DB)
 	go worker.StartOrderSweeper(context.Background(), trxRepo, 10*time.Minute)
 
 	// Menyalakan Router HTTP
-	r := router.SetupRouter()
+	r := router.SetupRouter(emailWorker)
 
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -92,12 +99,10 @@ func main() {
 		log.Printf("⚠️ [HTTP] Gagal shutdown dengan bersih: %v", err)
 	}
 
-	close(worker.EmailQueue)
-	select {
-	case <-emailDone:
-		log.Println("✅ [WORKER] Email worker selesai memproses antrian.")
-	case <-time.After(15 * time.Second):
-		log.Println("⚠️ [WORKER] Email worker tidak selesai dalam 15 detik.")
+	// Shutdown email worker gracefully
+	if emailWorker != nil {
+		emailWorker.Stop()
+		log.Println("✅ [WORKER] Redis email worker stopped gracefully.")
 	}
 }
 

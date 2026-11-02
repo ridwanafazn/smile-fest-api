@@ -59,13 +59,14 @@ type TransactionService interface {
 }
 
 type transactionService struct {
-	trxRepo     repository.TransactionRepository
-	ticketRepo  repository.TicketRepository
-	voucherRepo repository.VoucherRepository
+	trxRepo      repository.TransactionRepository
+	ticketRepo   repository.TicketRepository
+	voucherRepo  repository.VoucherRepository
+	emailWorker  worker.EmailWorkerInterface
 }
 
-func NewTransactionService(trxRepo repository.TransactionRepository, ticketRepo repository.TicketRepository, voucherRepo repository.VoucherRepository) TransactionService {
-	return &transactionService{trxRepo, ticketRepo, voucherRepo}
+func NewTransactionService(trxRepo repository.TransactionRepository, ticketRepo repository.TicketRepository, voucherRepo repository.VoucherRepository, emailWorker worker.EmailWorkerInterface) TransactionService {
+	return &transactionService{trxRepo, ticketRepo, voucherRepo, emailWorker}
 }
 
 func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, error) {
@@ -166,15 +167,19 @@ func (s *transactionService) Checkout(input CheckoutInput) (*model.Transaction, 
 
 	// PUBLISH EVENT KE MESSAGE QUEUE (Pola Event-Driven)
 	trackLink := fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", orderID, input.CustomerEmail)
-	worker.EmailQueue <- worker.EmailTask{
-		Type:          worker.TaskInstruction,
-		CustomerEmail: input.CustomerEmail,
-		InstructionData: &utils.InstructionData{
-			CustomerName: input.CustomerName,
-			OrderID:      orderID,
-			TrackLink:    trackLink,
-			TotalAmount:  fmt.Sprintf("Rp %s", utils.FormatRupiah(totalTransfer)),
-		},
+	if s.emailWorker != nil {
+		_ = s.emailWorker.EnqueueEmail(worker.RedisEmailTask{
+			Type:            worker.RedisTaskInstruction,
+			CustomerEmail:   input.CustomerEmail,
+			InstructionData: &utils.InstructionData{CustomerName: input.CustomerName, OrderID: orderID, TrackLink: trackLink, TotalAmount: fmt.Sprintf("Rp %s", utils.FormatRupiah(totalTransfer))},
+		})
+	} else {
+		// Fallback ke in-memory queue (legacy)
+		worker.EmailQueue <- worker.EmailTask{
+			Type:            worker.TaskInstruction,
+			CustomerEmail:   input.CustomerEmail,
+			InstructionData: &utils.InstructionData{CustomerName: input.CustomerName, OrderID: orderID, TrackLink: trackLink, TotalAmount: fmt.Sprintf("Rp %s", utils.FormatRupiah(totalTransfer))},
+		}
 	}
 
 	return &transaction, nil
@@ -289,14 +294,27 @@ func (s *transactionService) VerifyPayment(orderID, action string) error {
 	}
 
 	// PUBLISH EVENT KE MESSAGE QUEUE (Pola Event-Driven)
-	worker.EmailQueue <- worker.EmailTask{
-		Type:          worker.TaskTicket,
-		CustomerEmail: transaction.CustomerEmail,
-		TicketData: &utils.EmailData{
-			CustomerName: transaction.CustomerName,
-			OrderID:      transaction.ID,
-			TicketLink:   fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", transaction.ID, transaction.CustomerEmail),
-		},
+	if s.emailWorker != nil {
+		_ = s.emailWorker.EnqueueEmail(worker.RedisEmailTask{
+			Type:          worker.RedisTaskTicket,
+			CustomerEmail: transaction.CustomerEmail,
+			TicketData: &utils.EmailData{
+				CustomerName: transaction.CustomerName,
+				OrderID:      transaction.ID,
+				TicketLink:   fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", transaction.ID, transaction.CustomerEmail),
+			},
+		})
+	} else {
+		// Fallback ke in-memory queue (legacy)
+		worker.EmailQueue <- worker.EmailTask{
+			Type:          worker.TaskTicket,
+			CustomerEmail: transaction.CustomerEmail,
+			TicketData: &utils.EmailData{
+				CustomerName: transaction.CustomerName,
+				OrderID:      transaction.ID,
+				TicketLink:   fmt.Sprintf("https://smile-festival.pages.dev/track-ticket?order_id=%s&email=%s", transaction.ID, transaction.CustomerEmail),
+			},
+		}
 	}
 
 	return nil

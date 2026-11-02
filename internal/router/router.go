@@ -10,13 +10,14 @@ import (
 	"github.com/ridwanafazn/smile-fest-api/internal/middleware"
 	"github.com/ridwanafazn/smile-fest-api/internal/repository"
 	"github.com/ridwanafazn/smile-fest-api/internal/service"
+	"github.com/ridwanafazn/smile-fest-api/internal/worker"
 
 	_ "github.com/ridwanafazn/smile-fest-api/docs"
 	swaggerFiles "github.com/swaggo/files"
 	ginSwagger "github.com/swaggo/gin-swagger"
 )
 
-func SetupRouter() *gin.Engine {
+func SetupRouter(emailWorker worker.EmailWorkerInterface) *gin.Engine {
 	r := gin.Default()
 
 	r.Use(cors.New(cors.Config{
@@ -38,7 +39,7 @@ func SetupRouter() *gin.Engine {
 	userService := service.NewUserService(userRepo)
 	ticketService := service.NewTicketService(ticketRepo)
 	voucherService := service.NewVoucherService(voucherRepo)
-	trxService := service.NewTransactionService(trxRepo, ticketRepo, voucherRepo)
+	trxService := service.NewTransactionService(trxRepo, ticketRepo, voucherRepo, emailWorker)
 
 	userHandler := handler.NewUserHandler(userService)
 	ticketHandler := handler.NewTicketHandler(ticketService)

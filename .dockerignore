@@ -1,0 +1,59 @@
+# Environment & Secrets
+.env
+.env.local
+.env.*.local
+
+# IDE & Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS & System
+.DS_Store
+Thumbs.db
+
+# Git
+.git/
+.gitignore
+
+# Documentation (not needed in image)
+docs/
+*.md
+!docs/swagger.yaml
+!docs/swagger.json
+!docs/docs.go
+
+# Build Artifacts
+*.exe
+smile-fest-api*
+!Dockerfile
+
+# Test & Coverage
+*.test
+*.out
+coverage/
+
+# Dependency Directories (not needed - using go mod download)
+vendor/
+
+# Logs
+*.log
+
+# Temporary Files
+tmp/
+temp/
+*.tmp
+
+# Docker
+.dockerignore
+docker-compose*.yml
+
+# CI/CD
+.github/
+.gitlab-ci.yml
+
+# Database / Migration Files (if any)
+migrations/
+*.sql

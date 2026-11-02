@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"os"
 	"time"
 
@@ -26,6 +27,14 @@ func GenerateToken(userID string, role string) (string, error) {
 		"exp":     time.Now().Add(time.Hour * 24).Unix(),
 	}
 
+	secret := os.Getenv("JWT_SECRET")
+	if secret == "" {
+		return "", fmt.Errorf("JWT_SECRET belum diatur")
+	}
+	if len(secret) < 32 {
+		return "", fmt.Errorf("JWT_SECRET terlalu pendek (min 32 karakter): %d karakter", len(secret))
+	}
+
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(os.Getenv("JWT_SECRET")))
+	return token.SignedString([]byte(secret))
 }

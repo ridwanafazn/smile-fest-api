@@ -237,12 +237,22 @@ func (s *ticketService) ValidateTicket(ticketID string) (*model.Ticket, error) {
 		return nil, errors.New("qr code tidak valid atau tiket tidak ditemukan")
 	}
 
+	// B4: Verifikasi status transaksi harus 'settlement' (verified)
+	if ticket.Transaction == nil || ticket.Transaction.Status != "settlement" {
+		return ticket, errors.New("TIKET TIDAK VALID: transaksi belum diverifikasi atau bukan status settlement")
+	}
+
+	// B4: Verifikasi tiket tidak kedaluwarsa (expires_at belum lewat)
+	now := time.Now()
+	if ticket.Transaction.ExpiresAt.Before(now) {
+		return ticket, errors.New("TIKET KEDALUWARSA: batas waktu transaksi sudah lewat")
+	}
+
 	if ticket.IsScanned {
 		// Trik: Tetap kembalikan pointer tiket-nya bersamaan dengan pesan error!
 		return ticket, errors.New("TIKET SUDAH DIGUNAKAN!")
 	}
 
-	now := time.Now()
 	ticket.IsScanned = true
 	ticket.ScannedAt = &now
 

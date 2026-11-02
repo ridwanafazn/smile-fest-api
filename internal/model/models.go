@@ -28,7 +28,7 @@ type Voucher struct {
 }
 
 type Transaction struct {
-	ID             string `gorm:"primaryKey" json:"id"`
+	ID             string `gorm:"primaryKey;unique" json:"id"`
 	CustomerName   string `gorm:"not null" json:"customer_name"`
 	CustomerEmail  string `gorm:"not null" json:"customer_email"`
 	CustomerPhone  string `gorm:"not null" json:"customer_phone"`

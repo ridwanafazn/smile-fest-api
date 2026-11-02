@@ -7,8 +7,27 @@ import (
 
 	"github.com/ridwanafazn/smile-fest-api/internal/model"
 	"github.com/ridwanafazn/smile-fest-api/internal/repository"
+	"github.com/ridwanafazn/smile-fest-api/internal/worker"
 	"github.com/ridwanafazn/smile-fest-api/pkg/terrors"
 )
+
+// --- Mock email worker ---
+
+type mockEmailWorker struct {
+	worker.EmailWorkerInterface
+	fnEnqueue func(worker.RedisEmailTask) error
+}
+
+func (m *mockEmailWorker) EnqueueEmail(task worker.RedisEmailTask) error {
+	if m.fnEnqueue != nil {
+		return m.fnEnqueue(task)
+	}
+	return nil
+}
+
+func noopEmailWorker() *mockEmailWorker {
+	return &mockEmailWorker{}
+}
 
 // --- Mock repositories (embed interface + override hanya metode yang dipakai) ---
 
@@ -85,7 +104,7 @@ func TestCheckout_Success(t *testing.T) {
 	ticket := &mockTicketRepo{fnFindVariant: func(string) (*model.TicketVariant, error) { return activeVariant(100000), nil }}
 	voucher := &mockVoucherRepo{}
 
-	svc := NewTransactionService(trx, ticket, voucher)
+	svc := NewTransactionService(trx, ticket, voucher, noopEmailWorker())
 	created, err := svc.Checkout(baseInput(2))
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -123,7 +142,7 @@ func TestCheckout_OrderIDIsUniqueAcrossCalls(t *testing.T) {
 	}
 	ticket := &mockTicketRepo{fnFindVariant: func(string) (*model.TicketVariant, error) { return activeVariant(100000), nil }}
 	voucher := &mockVoucherRepo{}
-	svc := NewTransactionService(trx, ticket, voucher)
+	svc := NewTransactionService(trx, ticket, voucher, noopEmailWorker())
 
 	seen := map[string]bool{}
 	for i := 0; i < 100; i++ {
@@ -145,7 +164,7 @@ func TestCheckout_PendingExists(t *testing.T) {
 	}
 	ticket := &mockTicketRepo{fnFindVariant: func(string) (*model.TicketVariant, error) { return activeVariant(100000), nil }}
 	voucher := &mockVoucherRepo{}
-	svc := NewTransactionService(trx, ticket, voucher)
+	svc := NewTransactionService(trx, ticket, voucher, noopEmailWorker())
 
 	_, err := svc.Checkout(baseInput(1))
 	if !errors.Is(err, terrors.ErrPendingTransactionExists) {
@@ -166,7 +185,7 @@ func TestCheckout_VoucherApplied(t *testing.T) {
 		},
 		fnReserve: func(id uint, qty int) error { return nil },
 	}
-	svc := NewTransactionService(trx, ticket, voucher)
+	svc := NewTransactionService(trx, ticket, voucher, noopEmailWorker())
 
 	input := baseInput(2)
 	input.VoucherCode = "PELAJAR"
@@ -200,7 +219,7 @@ func TestCheckout_QuotaExceeded(t *testing.T) {
 	}
 	ticket := &mockTicketRepo{fnFindVariant: func(string) (*model.TicketVariant, error) { return activeVariant(100000), nil }}
 	voucher := &mockVoucherRepo{}
-	svc := NewTransactionService(trx, ticket, voucher)
+	svc := NewTransactionService(trx, ticket, voucher, noopEmailWorker())
 
 	_, err := svc.Checkout(baseInput(2))
 	if err == nil || !strings.Contains(err.Error(), "kuota") {
@@ -221,7 +240,7 @@ func TestCheckout_VoucherQuotaExceeded(t *testing.T) {
 		},
 		fnReserve: func(id uint, qty int) error { return terrors.ErrVoucherQuotaExceeded },
 	}
-	svc := NewTransactionService(trx, ticket, voucher)
+	svc := NewTransactionService(trx, ticket, voucher, noopEmailWorker())
 
 	input := baseInput(2)
 	input.VoucherCode = "PELAJAR"
